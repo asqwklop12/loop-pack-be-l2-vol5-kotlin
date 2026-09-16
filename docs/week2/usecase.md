@@ -1,0 +1,185 @@
+# 유스케이스 흐름
+
+각 흐름은 유스케이스 하나를 다룬다. 빨간 노드는 실패, `거절` 로 끝나면 되돌릴 것이 없고
+`재고 복원` 을 거치면 되돌릴 것이 있다.
+
+---
+
+## 1. 주문
+
+```mermaid
+flowchart LR
+    고객([고객]) --> A[주문 시작]
+    A --> B[주문서 제작]
+    B --> C[쿠폰 적용]
+    C --> D[재고 차감]
+    D --> E[쿠폰 소진]
+    E --> F[주문 확정]
+    F --> G{결제 수단 설정}
+    G -->|포인트| H[포인트 차감]
+    G -->|PG사| I{PG 승인}
+    H --> J[결제 완료]
+    I -->|승인| J
+    J --> K[주문 완료]
+
+    B --> B1["없는 상품<br/>삭제된 상품<br/>수량 0"]
+    C --> C1[쿠폰 사용 불가]
+    D --> D1[재고 부족]
+    H --> H1[잔액 부족]
+    I -->|거절·타임아웃| R[재고 복원]
+    H1 --> R
+
+    B1 --> X[거절]
+    C1 --> X
+    D1 --> X
+    R --> X
+    X -.-> 고객
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1,C1,D1,H1,R,X fail
+```
+
+쿠폰 적용과 쿠폰 소진은 선택 단계다. 쿠폰을 쓰지 않으면 둘 다 건너뛴다.
+
+---
+
+## 2. 주문 취소 — 확정 전
+
+```mermaid
+flowchart LR
+    고객([고객]) --> A[취소 요청]
+    A --> B[주문서 조회]
+    B --> C[재고 복원]
+    C --> D[주문 취소 완료]
+
+    B --> B1["없는 주문<br/>남의 주문<br/>이미 확정됨"]
+    B1 --> X[거절]
+    X -.-> 고객
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1,X fail
+```
+
+---
+
+## 3. 주문 취소 — 확정 후
+
+```mermaid
+flowchart LR
+    고객([고객]) --> A[취소 요청]
+    A --> B[주문서 조회]
+    B --> C{결제 수단}
+    C -->|포인트| D[포인트 복원]
+    C -->|PG사| E[환불 요청]
+    D --> F[재고 복원]
+    E --> F
+    F --> G[쿠폰 복원]
+    G --> H[주문 취소 완료]
+
+    B --> B1["없는 주문<br/>남의 주문<br/>이미 취소됨"]
+    B1 --> X[거절]
+    X -.-> 고객
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1,X fail
+```
+
+복원은 차감의 역순이다. 환불 실패 처리는 PG 도입 시 정한다.
+
+---
+
+## 4. 좋아요 등록
+
+```mermaid
+flowchart LR
+    고객([고객]) --> A[좋아요 등록 요청]
+    A --> B[상품 조회]
+    B --> C[좋아요 등록]
+    C --> D[완료]
+
+    B --> B1["없는 상품<br/>삭제된 상품"]
+    B1 -.->|exception| 고객
+    C --> C1[이미 좋아요를 눌렀음]
+    C1 --> D
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```
+
+---
+
+## 5. 좋아요 해제
+
+```mermaid
+flowchart LR
+    고객([고객]) --> A[좋아요 해제 요청]
+    A --> B[상품 조회]
+    B --> C[좋아요 해제]
+    C --> D[완료]
+
+    B --> B1["없는 상품<br/>삭제된 상품"]
+    B1 -.->|exception| 고객
+    C --> C1[좋아요가 이미 취소됨]
+    C1 --> D
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```
+
+이미 그 상태여도 완료로 끝난다. 같은 요청을 여러 번 보내도 결과가 같다.
+
+---
+
+## 6. 브랜드 삭제
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[브랜드 삭제 요청]
+    A --> B[브랜드 조회]
+    B --> C{삭제되지 않은<br/>상품 확인}
+    C -->|0| D[브랜드 삭제 완료]
+
+    B --> B1[브랜드가 존재하지 않는 경우]
+    C -->|1 이상| C1[상품이 존재하는 경우]
+    B1 -.->|exception| 관리자
+    C1 -.->|exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1,C1 fail
+```
+
+---
+
+## 7. 상품 삭제
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[상품 삭제 요청]
+    A --> B[상품 조회]
+    B --> C[좋아요 삭제]
+    C --> D[상품 삭제]
+
+    B --> B1["상품이 존재하지 않는 경우<br/>재고가 존재하는 경우"]
+    B1 -.->|exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```
+
+---
+
+## 8. 포인트 충전
+
+```mermaid
+flowchart LR
+    고객([고객]) --> A[포인트 충전 요청]
+    A --> B[잔액 증가]
+    B --> C["포인트 충전 완료<br/>기존 잔액 + 충전액"]
+
+    B --> B1[음수인 경우]
+    B1 -.->|exception| 고객
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```
+
