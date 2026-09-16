@@ -11,7 +11,7 @@
 1  브랜드        의존 없음                      ← 도메인·고객 조회 완료
 2  상품          브랜드 참조, 재고 보유          ← 도메인 완료
 3  좋아요        상품 참조, 관계 모델            ← 도메인 완료
-4  포인트        의존 없음
+4  포인트        의존 없음                      ← 도메인 완료
 5  주문          상품·재고·포인트를 모두 사용
 ```
 
@@ -174,3 +174,50 @@ unlike →  (상품 상태를 보지 않음)           // 남은 관계는 지�
 - **좋아요 API** — `POST/DELETE /api/v1/products/{productId}/likes`, `GET /api/v1/users/{userId}/likes`.
   내 좋아요 목록에서 삭제된 상품을 제외해야 한다.
 - **상품 삭제의 좋아요 삭제** — 유스케이스 7번의 `좋아요 삭제` 단계가 아직 비어 있다. 이제 붙일 수 있다.
+
+---
+
+## 4. 포인트
+
+유스케이스 8번(포인트 충전)에 해당한다.
+
+### 구현 전 정한 것
+
+| 항목 | 결정 |
+| --- | --- |
+| 충전액 | 0 이하를 거절한다. 0원은 충전이 아니다 |
+| 잔액 | 0원도 유효하다. 충전한 적이 없는 사용자의 잔액은 0원이다 |
+| 합계 범위 | `Money.plus` 의 `Math.addExact` 가 막는다 |
+| 사용자 | 첫 충전 때 잔액이 만들어진다. 별도 사용자 조회 단계를 두지 않는다 |
+
+흐름도 8번에 `사용자 조회` 단계와 그 실패 경로가 없으므로 존재 확인을 넣지 않았다.
+
+### 만든 파일
+
+| 계층 | 파일 |
+| --- | --- |
+| domain | `domain/point/PointBalance.kt`, `PointRepository.kt`, `PointService.kt` |
+| infrastructure | `infrastructure/point/PointJpaRepository.kt`, `PointRepositoryImpl.kt` |
+| test | `domain/point/PointBalanceTest.kt`, `PointServiceIntegrationTest.kt` |
+
+### TDD 기록
+
+| # | 규칙 | RED | GREEN |
+| --- | --- | --- | --- |
+| 1 | 충전액이 0원이면 거절하고 기존 잔액을 유지한다 | 단위 5건 중 1건 실패 | `PointBalance.charge` 에 양수 검사 |
+| 2 | 충전 후 잔액이 표현 범위를 넘으면 거절한다 | 없음 — 이미 통과 | 없음. `Money.plus` 가 이미 막는다 |
+| 3 | 두 번 충전하면 기존 잔액에 더해진다 | 통합 5건 중 2건 실패 | `findByUserId` 로 기존 잔액을 찾아 충전 |
+| 4 | 충전한 적이 없으면 잔액은 0원이다 | 위와 같음 | `getBalance` 에서 없으면 `Money.ZERO` |
+
+2번은 RED 가 없다. 값의 유효성(`Money`)과 행동의 입력 조건(`charge`)을 나눠 둔 덕분에
+행동 쪽에서 다시 검사할 필요가 없었다. 상품 가격에서 쓴 구분과 같다.
+
+### 검증
+
+`./gradlew :apps:commerce-api:test` — 전체 통과 (ArchUnit 포함)
+`./gradlew :apps:commerce-api:ktlintCheck` — 통과
+
+### 남은 것
+
+- **포인트 API** — `POST /api/v1/points/charge`, `GET /api/v1/points`.
+  누락·잘못된 타입은 요청 DTO 검증으로 거른다.
