@@ -8,8 +8,8 @@
 의존이 없는 것부터 쌓는다. 주문이 마지막인 이유는 앞의 넷이 있어야 확정 흐름을 검증할 수 있어서다.
 
 ```
-1  브랜드        의존 없음                      ← 진행 중
-2  상품          브랜드 참조, 재고 보유
+1  브랜드        의존 없음                      ← 도메인·고객 조회 완료
+2  상품          브랜드 참조, 재고 보유          ← 도메인 완료
 3  좋아요        상품 참조, 관계 모델
 4  포인트        의존 없음
 5  주문          상품·재고·포인트를 모두 사용
@@ -61,3 +61,54 @@
   역할이 아닌 요청을 어떤 응답으로 거절할지 정해야 한다. 현재 `ErrorType` 에 401·403 이 없고,
   W1 에서 주문 소유권은 404 로 숨기기로 한 것과 맞물린다.
 - **브랜드 삭제의 연결 상품 확인** — 상품을 구현한 뒤에 붙인다. 지금 만들면 검증할 대상이 없다.
+
+---
+
+## 2. 상품
+
+### 구현 전 정한 것
+
+| 항목 | 결정 |
+| --- | --- |
+| 상품 이름 | 공백 불가, 최대 100자 |
+| 상품 가격 | 1원 이상. `Money` 자체는 0원을 허용하지만 상품 가격은 양수여야 한다 |
+| 값 객체 | `Stock` · `Money` 둘 다 VO 로 뽑는다. 주문·포인트에서 다시 쓴다 |
+| 브랜드 참조 | 객체가 아니라 `brandId` 만 보관한다. 조회 결과 조합은 application 이 맡는다 |
+| 삭제 | soft delete. 재고가 0일 때만 삭제한다 |
+
+### 만든 파일
+
+| 계층 | 파일 |
+| --- | --- |
+| domain | `domain/shared/Money.kt`, `domain/product/Stock.kt`, `Product.kt`, `ProductRepository.kt`, `ProductService.kt` |
+| infrastructure | `infrastructure/product/ProductJpaRepository.kt`, `ProductRepositoryImpl.kt` |
+| test | `domain/shared/MoneyTest.kt`, `domain/product/StockTest.kt`, `ProductTest.kt`, `ProductServiceIntegrationTest.kt` |
+
+### TDD 기록
+
+값 객체는 규칙이 한 덩어리로 묶여 있어 객체 단위로 RED 를 만들었다.
+
+| # | 규칙 | RED | GREEN |
+| --- | --- | --- | --- |
+| 1 | `Money` — 음수 거절 · 차감액 초과 거절 · 합계 범위 초과 거절 | 6건 중 3건 실패 | `init` 검사, `minus` 관계 검사, `plus` 에 `Math.addExact` |
+| 2 | `Stock` — 음수 거절 · 차감 수량 0 이하 거절 · 보유량 초과 거절 · 복원 수량 0 이하 거절 | 8건 중 4건 실패 | `init` 검사와 `requirePositive`, `decrease` 의 보유량 비교 |
+| 3 | `Product` — 이름 공백·100자 초과 거절, 가격 0원 거절, 수정 시 기존 값 유지 | 8건 중 4건 실패 | `guardName` · `guardPrice` 를 `init` 과 `update` 양쪽에서 호출 |
+| 4 | 없거나 삭제된 브랜드를 참조하면 `NOT_FOUND` | 통합 7건 중 5건 실패 | `ProductService.requireExistingBrand` |
+| 5 | 없거나 삭제된 상품 조회는 `NOT_FOUND` | 위와 같음 | `ProductService.get` 과 `findByIdAndDeletedAtIsNull` |
+| 6 | 재고가 남아 있으면 삭제를 거절한다 | 위와 같음 | `ProductService.delete` 에 `CONFLICT` |
+
+값의 유효성과 행동의 입력 조건을 나눠 두었다. `Money` 는 0원을 허용하고, 0원을 거절하는 것은
+상품 가격이라는 **행동의 조건**이므로 `Product.guardPrice` 에 있다.
+
+수정 실패 시 기존 값이 유지되는지도 함께 검증한다. 검사를 통과한 뒤에 대입하기 때문이다.
+
+### 검증
+
+`./gradlew :apps:commerce-api:test` — 전체 통과 (ArchUnit 포함)
+`./gradlew :apps:commerce-api:ktlintCheck` — 통과
+
+### 남은 것
+
+- **상품 상세·목록 API** — 상세 응답에 좋아요 수가 들어가므로 좋아요를 먼저 만든다.
+- **목록 정렬** — `latest` · `price_asc` · `likes_desc` 의 동률 보조 기준과 잘못된 입력 처리를 정해야 한다.
+- **관리자 CRUD** — 브랜드와 같은 이유로 역할 거절 응답을 정해야 한다.
