@@ -67,4 +67,49 @@ class PointBalanceTest {
             assertThat(point.balance).isEqualTo(Money(Long.MAX_VALUE))
         }
     }
+
+    @DisplayName("포인트로 결제할 때, ")
+    @Nested
+    inner class Pay {
+        @DisplayName("잔액보다 큰 금액이면, BAD_REQUEST 예외가 발생하고 기존 잔액이 유지된다.")
+        @Test
+        fun throwsBadRequestException_whenAmountExceedsBalance() {
+            val point = PointBalance(userId = 1L, balance = Money(1_000))
+
+            val result = assertThrows<CoreException> { point.pay(Money(1_001)) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+            assertThat(point.balance).isEqualTo(Money(1_000))
+        }
+
+        @DisplayName("결제액이 0 이하면, BAD_REQUEST 예외가 발생한다.")
+        @Test
+        fun throwsBadRequestException_whenAmountIsNotPositive() {
+            val point = PointBalance(userId = 1L, balance = Money(1_000))
+
+            val result = assertThrows<CoreException> { point.pay(Money.ZERO) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+        }
+
+        @DisplayName("잔액 전액을 결제하면, 잔액이 0원이 된다.")
+        @Test
+        fun leavesZero_whenPayingEntireBalance() {
+            val point = PointBalance(userId = 1L, balance = Money(1_000))
+
+            point.pay(Money(1_000))
+
+            assertThat(point.balance).isEqualTo(Money.ZERO)
+        }
+
+        @DisplayName("결제하면, 잔액이 그만큼 줄어든다.")
+        @Test
+        fun decreasesBalance_whenAmountIsAffordable() {
+            val point = PointBalance(userId = 1L, balance = Money(10_000))
+
+            point.pay(Money(7_000))
+
+            assertThat(point.balance).isEqualTo(Money(3_000))
+        }
+    }
 }

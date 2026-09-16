@@ -64,6 +64,40 @@ class MoneyTest {
         }
     }
 
+    @DisplayName("금액에 수량을 곱할 때, ")
+    @Nested
+    inner class Times {
+        @DisplayName("수량이 0 이하면, BAD_REQUEST 예외가 발생한다.")
+        @Test
+        fun throwsBadRequestException_whenQuantityIsNotPositive() {
+            val money = Money(1_000)
+
+            val result = assertThrows<CoreException> { money.times(0) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+        }
+
+        @DisplayName("수량만큼 곱한 금액을 반환한다.")
+        @Test
+        fun returnsMultiplied_whenQuantityIsPositive() {
+            val money = Money(1_000)
+
+            val result = money.times(3)
+
+            assertThat(result).isEqualTo(Money(3_000))
+        }
+
+        @DisplayName("곱한 값이 표현 범위를 넘으면, BAD_REQUEST 예외가 발생한다.")
+        @Test
+        fun throwsBadRequestException_whenProductOverflows() {
+            val money = Money(Long.MAX_VALUE)
+
+            val result = assertThrows<CoreException> { money.times(2) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+        }
+    }
+
     @DisplayName("금액을 더할 때, ")
     @Nested
     inner class Plus {

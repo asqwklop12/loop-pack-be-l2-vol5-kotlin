@@ -12,7 +12,7 @@
 2  상품          브랜드 참조, 재고 보유          ← 도메인 완료
 3  좋아요        상품 참조, 관계 모델            ← 도메인 완료
 4  포인트        의존 없음                      ← 도메인 완료
-5  주문          상품·재고·포인트를 모두 사용
+5  주문          상품·재고·포인트를 모두 사용    ← 도메인 완료
 ```
 
 ---
@@ -221,3 +221,80 @@ unlike →  (상품 상태를 보지 않음)           // 남은 관계는 지�
 
 - **포인트 API** — `POST /api/v1/points/charge`, `GET /api/v1/points`.
   누락·잘못된 타입은 요청 DTO 검증으로 거른다.
+
+---
+
+## 5. 주문
+
+유스케이스 1번(주문)에 해당한다.
+
+### 흐름도와 API 의 대응
+
+흐름도의 한 줄이 API 두 개로 갈린다.
+
+```
+POST /api/v1/orders          주문서 제작 → DRAFT 저장            차감 없음
+POST /orders/{id}/confirm    재고 차감 → 포인트 차감 → 주문 확정   CONFIRMED
+```
+
+`decisions.md` 의 "재고는 주문 확정 전에 차감" 은 확정 API **안에서의 순서**로 유지된다.
+
+### 구현 전 정한 것
+
+| 항목 | 결정 |
+| --- | --- |
+| 쿠폰 | 이번 범위에서 제외한다. 과제 명세의 이번 주 표에 쿠폰 API 가 없다 |
+| 중복 품목 | 같은 상품이 두 번 들어오면 거절한다 |
+| 단가 | 주문 생성 시점의 상품 가격으로 고정한다 |
+| 결제액 | 주문 합계와 같아야 한다. 다르면 확정을 거절한다 |
+| 남의 주문 | 없는 주문과 같은 `NOT_FOUND`. 주문의 존재가 새어나가지 않는다 (W1 INV-001) |
+
+### 만든 파일
+
+| 계층 | 파일 |
+| --- | --- |
+| domain | `domain/order/Order.kt`, `OrderItem.kt`, `OrderStatus.kt`, `OrderCommand.kt`, `OrderRepository.kt`, `OrderService.kt` |
+| infrastructure | `infrastructure/order/OrderJpaRepository.kt`, `OrderRepositoryImpl.kt` |
+| 추가된 행동 | `Money.times`, `PointBalance.pay`, `PointService.pay` |
+| test | `domain/order/OrderItemTest.kt`, `OrderTest.kt`, `OrderServiceIntegrationTest.kt` |
+
+### TDD 기록
+
+| # | 규칙 | RED | GREEN |
+| --- | --- | --- | --- |
+| 1 | `Money.times` — 수량 0 이하 거절, 범위 초과 거절 | 9건 중 1건 실패 | `requirePositive` 와 `Math.multiplyExact` |
+| 2 | 주문 품목의 수량은 양수여야 한다 | 2건 중 1건 실패 | `OrderItem.init` |
+| 3 | 품목이 없거나 같은 상품이 중복되면 거절한다 | 8건 중 4건 실패 | `Order.init` 의 `isEmpty` · `distinctBy` |
+| 4 | 결제액이 합계와 다르면 확정을 거절한다 | 위와 같음 | `Order.confirm` 의 금액 비교 |
+| 5 | 이미 확정된 주문은 다시 확정할 수 없다 | 위와 같음 | `Order.confirm` 의 상태 검사 |
+| 6 | `PointBalance.pay` — 결제액 0 이하 거절 | 9건 중 1건 실패 | `requirePositive` 추출 (REFACTOR) |
+| 7 | 생성 시 재고가 줄지 않고 단가가 고정된다 | 통합 8건 전부 실패 | `OrderService.create` 에서 상품 가격을 읽어 `OrderItem` 생성 |
+| 8 | 남의 주문은 없는 주문과 같은 응답 | 위와 같음 | `get` 에서 `isOwnedBy` 로 거른 뒤 `NOT_FOUND` |
+| 9 | 재고 부족이면 포인트가 줄지 않는다 | 위와 같음 | 재고를 결제보다 먼저 차감 |
+| 10 | 잔액 부족이면 재고가 복원된다 | 위와 같음 | 같은 트랜잭션 안이므로 롤백이 되돌린다 |
+
+6번은 충전과 결제가 같은 검사를 쓰게 되어 `requirePositive` 로 묶었다. 동작을 바꾸지 않고
+중복만 없앤 REFACTOR 다.
+
+10번은 보상 코드를 쓰지 않았다. 재고·포인트·주문이 같은 DB 라 트랜잭션이 되돌린다.
+흐름도의 `재고 복원` 박스는 PG 가 들어와 한 트랜잭션이 깨질 때 실제 코드가 된다.
+
+### 차감 순서
+
+```
+재고 차감  →  포인트 차감  →  주문 확정
+```
+
+되돌리기 싼 것부터 둔다. 지금은 셋 다 같은 DB 라 순서를 바꿔도 결과가 같지만,
+외부 결제가 들어오면 이 순서만 보상 없이 버틴다.
+
+### 검증
+
+`./gradlew :apps:commerce-api:test` — 전체 통과 (ArchUnit 포함)
+`./gradlew :apps:commerce-api:ktlintCheck` — 통과
+
+### 남은 것
+
+- **주문 API** — `POST /api/v1/orders`, `POST /orders/{orderId}/confirm`, `GET /api/v1/orders`, `GET /orders/{orderId}`.
+- **주문 취소** — 유스케이스 2·3번. 아직 `CANCELED` 상태와 복원 흐름이 없다.
+- **관리자 주문 조회** — 역할 거절 응답을 정해야 한다.

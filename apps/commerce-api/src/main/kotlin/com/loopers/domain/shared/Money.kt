@@ -19,6 +19,15 @@ class Money(
         return Money(sum)
     }
 
+    fun times(quantity: Int): Money {
+        if (quantity <= 0) throw CoreException(ErrorType.BAD_REQUEST, "수량은 1 이상이어야 합니다.")
+
+        val product = runCatching { Math.multiplyExact(amount, quantity.toLong()) }
+            .getOrElse { throw CoreException(ErrorType.BAD_REQUEST, "금액의 표현 범위를 넘었습니다.") }
+
+        return Money(product)
+    }
+
     fun minus(other: Money): Money {
         if (other.amount > amount) throw CoreException(ErrorType.BAD_REQUEST, "차감액이 원금을 넘습니다.")
 
