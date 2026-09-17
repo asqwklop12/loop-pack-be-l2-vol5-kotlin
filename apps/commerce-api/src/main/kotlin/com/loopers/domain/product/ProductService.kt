@@ -40,9 +40,17 @@ class ProductService(
         return get(id).also { it.update(name = name, price = price) }
     }
 
+    /**
+     * 최종 수량을 설정하지 않고 증가 값을 더한다. 음수만 거절하므로 0 은 재고를 바꾸지 않는다.
+     */
     @Transactional
-    fun changeStock(id: Long, quantity: Int): Product {
-        return get(id).also { it.changeStock(quantity) }
+    fun changeStock(id: Long, amount: Int): Product {
+        if (amount < 0) throw CoreException(ErrorType.BAD_REQUEST, "재고 증가 값은 음수일 수 없습니다.")
+
+        val product = get(id)
+        if (amount > 0) product.increaseStock(amount)
+
+        return product
     }
 
     @Transactional

@@ -31,6 +31,9 @@ class ProductFacade(
     fun updateProduct(productId: Long, name: String, price: Long): ProductInfo =
         withBrand(productService.update(id = productId, name = name, price = Money(price)))
 
+    fun changeStock(productId: Long, amount: Int): ProductInfo =
+        withBrand(productService.changeStock(id = productId, amount = amount))
+
     fun deleteProduct(productId: Long) = productService.delete(productId)
 
     private fun withBrand(product: Product): ProductInfo {

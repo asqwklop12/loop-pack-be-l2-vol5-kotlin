@@ -65,6 +65,19 @@ class ProductV1AdminController(
             .let { ApiResponse.success(it) }
     }
 
+    @PutMapping("/{productId}/stock")
+    fun changeStock(
+        @RequestHeader(value = "X-USER-ROLE") role: String,
+        @PathVariable(value = "productId") productId: Long,
+        @RequestBody request: AdminV1Dto.ProductV1.ChangeStockRequest,
+    ): ApiResponse<AdminV1Dto.ProductV1.Response> {
+        AdminRole.guard(role)
+
+        return productFacade.changeStock(productId, request.amount)
+            .let { AdminV1Dto.ProductV1.Response.from(it) }
+            .let { ApiResponse.success(it) }
+    }
+
     @DeleteMapping("/{productId}")
     fun deleteProduct(
         @RequestHeader(value = "X-USER-ROLE") role: String,

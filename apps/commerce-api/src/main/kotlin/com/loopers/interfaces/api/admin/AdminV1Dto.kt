@@ -28,6 +28,8 @@ class AdminV1Dto {
             val price: Long,
         )
 
+        data class ChangeStockRequest(val amount: Int)
+
         data class Response(
             val id: Long,
             val name: String,

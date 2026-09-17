@@ -312,3 +312,26 @@ flowchart LR
     classDef fail stroke:#e06c75,color:#e06c75
     class B1 fail
 ```
+
+---
+
+## 17. 상품 재고 변경
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[재고 변경 요청]
+    A --> B[상품 조회]
+    B --> C[재고 증가 값 입력]
+    C --> D[상품 재고 수량 변경]
+
+    B --> B1[존재하지 않는 상품인 경우]
+    C --> C1[음수인 경우]
+    B1 -.->|Exception| 관리자
+    C1 -.->|Exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1,C1 fail
+```
+
+최종 수량을 설정하는 것이 아니라 **증가 값**을 받는다. 음수만 거절하므로 0 은 통과하고
+재고가 바뀌지 않는다.

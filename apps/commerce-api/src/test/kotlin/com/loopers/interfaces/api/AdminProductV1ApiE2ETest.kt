@@ -187,6 +187,72 @@ class AdminProductV1ApiE2ETest @Autowired constructor(
         }
     }
 
+    @DisplayName("PUT /api-admin/v1/products/{productId}/stock")
+    @Nested
+    inner class ChangeStock {
+        private fun changeStock(productId: Long, amount: Int, role: String? = "ADMIN") = testRestTemplate.exchange(
+            "/api-admin/v1/products/$productId/stock",
+            HttpMethod.PUT,
+            HttpEntity(AdminV1Dto.ProductV1.ChangeStockRequest(amount), headers(role)),
+            productType,
+        )
+
+        @DisplayName("증가 값을 주면, 기존 재고에 더해진다.")
+        @Test
+        fun changesStock() {
+            val brand = savedBrand()
+            val productId = create(brand.id).body!!.data!!.id
+
+            changeStock(productId, 5)
+            val response = changeStock(productId, 3)
+
+            assertThat(response.statusCode.is2xxSuccessful).isTrue()
+            assertThat(response.body?.data?.stock).isEqualTo(8)
+            assertThat(productJpaRepository.findById(productId).get().stock.quantity).isEqualTo(8)
+        }
+
+        @DisplayName("0을 주면, 재고가 바뀌지 않는다.")
+        @Test
+        fun keepsStock_whenAmountIsZero() {
+            val brand = savedBrand()
+            val productId = create(brand.id).body!!.data!!.id
+            changeStock(productId, 5)
+
+            val response = changeStock(productId, 0)
+
+            assertThat(response.statusCode.is2xxSuccessful).isTrue()
+            assertThat(response.body?.data?.stock).isEqualTo(5)
+        }
+
+        @DisplayName("음수를 주면, 400 BAD_REQUEST 응답을 받고 기존 재고가 유지된다.")
+        @Test
+        fun returnsBadRequest_whenAmountIsNegative() {
+            val brand = savedBrand()
+            val productId = create(brand.id).body!!.data!!.id
+            changeStock(productId, 5)
+
+            val response = changeStock(productId, -1)
+
+            assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+            assertThat(productJpaRepository.findById(productId).get().stock.quantity).isEqualTo(5)
+        }
+
+        @DisplayName("존재하지 않는 상품이면, 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenProductDoesNotExist() {
+            assertThat(changeStock(-1L, 5).statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        }
+
+        @DisplayName("관리자가 아니면, 403 FORBIDDEN 응답을 받는다.")
+        @Test
+        fun returnsForbidden_whenNotAdmin() {
+            val brand = savedBrand()
+            val productId = create(brand.id).body!!.data!!.id
+
+            assertThat(changeStock(productId, 5, role = "USER").statusCode).isEqualTo(HttpStatus.FORBIDDEN)
+        }
+    }
+
     @DisplayName("PUT /api-admin/v1/products/{productId}")
     @Nested
     inner class Update {
