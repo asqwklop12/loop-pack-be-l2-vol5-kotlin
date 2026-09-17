@@ -15,4 +15,6 @@ class OrderRepositoryImpl(
 
     override fun findAllByUserId(userId: Long): List<Order> =
         orderJpaRepository.findAllByUserIdAndDeletedAtIsNull(userId)
+
+    override fun findAll(): List<Order> = orderJpaRepository.findAllByDeletedAtIsNull()
 }

@@ -24,4 +24,10 @@ class OrderFacade(
     @Transactional(readOnly = true)
     fun getAll(userId: Long): List<OrderInfo> =
         orderService.getAll(userId).map { OrderInfo.from(it) }
+
+    @Transactional(readOnly = true)
+    fun getAnyOrder(orderId: Long): OrderInfo = OrderInfo.from(orderService.getAnyOrder(orderId))
+
+    @Transactional(readOnly = true)
+    fun getAllOrders(): List<OrderInfo> = orderService.getAllOrders().map { OrderInfo.from(it) }
 }

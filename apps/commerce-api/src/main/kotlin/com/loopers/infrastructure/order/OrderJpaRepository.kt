@@ -5,4 +5,5 @@ import org.springframework.data.jpa.repository.JpaRepository
 
 interface OrderJpaRepository : JpaRepository<Order, Long> {
     fun findAllByUserIdAndDeletedAtIsNull(userId: Long): List<Order>
+    fun findAllByDeletedAtIsNull(): List<Order>
 }

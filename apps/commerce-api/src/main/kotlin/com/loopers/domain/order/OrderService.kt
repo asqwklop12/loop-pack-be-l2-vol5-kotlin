@@ -42,6 +42,18 @@ class OrderService(
     fun getAll(userId: Long): List<Order> = orderRepository.findAllByUserId(userId)
 
     /**
+     * 관리자 조회. 소유자를 가리지 않는다.
+     */
+    @Transactional(readOnly = true)
+    fun getAnyOrder(orderId: Long): Order {
+        return orderRepository.find(orderId)
+            ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $orderId] 주문을 찾을 수 없습니다.")
+    }
+
+    @Transactional(readOnly = true)
+    fun getAllOrders(): List<Order> = orderRepository.findAll()
+
+    /**
      * 되돌리기 싼 것부터 차감한다. 재고가 먼저고 결제가 마지막이다.
      * 어느 단계에서 실패해도 같은 트랜잭션 안이라 앞 단계가 되돌아간다.
      */
