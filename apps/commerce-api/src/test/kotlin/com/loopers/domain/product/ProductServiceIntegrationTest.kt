@@ -29,7 +29,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
         databaseCleanUp.truncateAllTables()
     }
 
-    private fun savedBrand(name: String = "나이키") = brandJpaRepository.save(Brand(name = name))
+    private fun savedBrand(name: String = "나이키코리아") = brandJpaRepository.save(Brand(name = name))
 
     @DisplayName("상품을 등록할 때, ")
     @Nested

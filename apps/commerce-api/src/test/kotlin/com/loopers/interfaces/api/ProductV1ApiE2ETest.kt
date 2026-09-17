@@ -39,7 +39,7 @@ class ProductV1ApiE2ETest @Autowired constructor(
     private fun endpoint(productId: Long) = "/api/v1/products/$productId"
 
     private fun savedProduct(): Product {
-        val brand = brandJpaRepository.save(Brand(name = "나이키"))
+        val brand = brandJpaRepository.save(Brand(name = "나이키코리아"))
         return productJpaRepository.save(
             Product(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(5)),
         )
@@ -63,7 +63,7 @@ class ProductV1ApiE2ETest @Autowired constructor(
                 { assertThat(response.body?.data?.name).isEqualTo("에어포스1") },
                 { assertThat(response.body?.data?.price).isEqualTo(129_000L) },
                 { assertThat(response.body?.data?.stock).isEqualTo(5) },
-                { assertThat(response.body?.data?.brandName).isEqualTo("나이키") },
+                { assertThat(response.body?.data?.brandName).isEqualTo("나이키코리아") },
                 { assertThat(response.body?.data?.likeCount).isEqualTo(2L) },
             )
         }

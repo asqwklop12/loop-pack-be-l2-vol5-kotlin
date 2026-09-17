@@ -41,7 +41,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
         HttpHeaders().apply { set("X-USER-ID", userId.toString()) }
 
     private fun savedProduct(price: Long = 1_000, stock: Int = 5): Product {
-        val brand = brandJpaRepository.save(Brand(name = "브랜드${System.nanoTime()}"))
+        val brand = brandJpaRepository.save(Brand(name = "테스트브랜드"))
         return productJpaRepository.save(
             Product(brandId = brand.id, name = "상품", price = Money(price), stock = Stock(stock)),
         )

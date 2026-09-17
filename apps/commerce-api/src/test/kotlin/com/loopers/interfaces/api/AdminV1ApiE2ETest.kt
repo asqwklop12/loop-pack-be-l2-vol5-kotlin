@@ -97,6 +97,141 @@ class AdminV1ApiE2ETest @Autowired constructor(
         }
     }
 
+    private val brandListType =
+        object : ParameterizedTypeReference<ApiResponse<List<AdminV1Dto.BrandV1.Response>>>() {}
+
+    @DisplayName("GET /api-admin/v1/brands/{brandId}")
+    @Nested
+    inner class GetBrand {
+        @DisplayName("존재하는 브랜드면, 상세를 반환한다.")
+        @Test
+        fun returnsBrand_whenExists() {
+            val brand = savedBrand()
+
+            val response = testRestTemplate.exchange(
+                "/api-admin/v1/brands/${brand.id}",
+                HttpMethod.GET,
+                HttpEntity<Any>(headers()),
+                brandType,
+            )
+
+            assertThat(response.statusCode.is2xxSuccessful).isTrue()
+            assertThat(response.body?.data?.name).isEqualTo("나이키코리아")
+        }
+
+        @DisplayName("존재하지 않는 브랜드면, 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenBrandDoesNotExist() {
+            val response = testRestTemplate.exchange(
+                "/api-admin/v1/brands/-1",
+                HttpMethod.GET,
+                HttpEntity<Any>(headers()),
+                brandType,
+            )
+
+            assertThat(response.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        }
+
+        @DisplayName("삭제된 브랜드면, 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenBrandIsDeleted() {
+            val brand = savedBrand()
+            brandJpaRepository.save(brand.apply { delete() })
+
+            val response = testRestTemplate.exchange(
+                "/api-admin/v1/brands/${brand.id}",
+                HttpMethod.GET,
+                HttpEntity<Any>(headers()),
+                brandType,
+            )
+
+            assertThat(response.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        }
+    }
+
+    @DisplayName("GET /api-admin/v1/brands")
+    @Nested
+    inner class GetBrands {
+        @DisplayName("브랜드가 없으면, 빈 목록을 반환한다.")
+        @Test
+        fun returnsEmptyList_whenNoBrand() {
+            val response = testRestTemplate.exchange(
+                "/api-admin/v1/brands",
+                HttpMethod.GET,
+                HttpEntity<Any>(headers()),
+                brandListType,
+            )
+
+            assertThat(response.statusCode.is2xxSuccessful).isTrue()
+            assertThat(response.body?.data).isEmpty()
+        }
+
+        @DisplayName("삭제된 브랜드는 목록에서 제외된다.")
+        @Test
+        fun excludesDeletedBrands() {
+            savedBrand(name = "나이키코리아")
+            val adidas = savedBrand(name = "아디다스")
+            brandJpaRepository.save(adidas.apply { delete() })
+
+            val response = testRestTemplate.exchange(
+                "/api-admin/v1/brands",
+                HttpMethod.GET,
+                HttpEntity<Any>(headers()),
+                brandListType,
+            )
+
+            assertThat(response.body?.data?.map { it.name }).containsExactly("나이키코리아")
+        }
+    }
+
+    @DisplayName("PUT /api-admin/v1/brands/{brandId}")
+    @Nested
+    inner class UpdateBrand {
+        private fun update(brandId: Long, name: String, role: String? = "ADMIN") = testRestTemplate.exchange(
+            "/api-admin/v1/brands/$brandId",
+            HttpMethod.PUT,
+            HttpEntity(AdminV1Dto.BrandV1.UpdateRequest(name), headers(role)),
+            brandType,
+        )
+
+        @DisplayName("유효한 이름이면, 이름이 바뀐다.")
+        @Test
+        fun updatesName_whenValid() {
+            val brand = savedBrand()
+
+            val response = update(brand.id, "아디다스")
+
+            assertThat(response.statusCode.is2xxSuccessful).isTrue()
+            assertThat(response.body?.data?.name).isEqualTo("아디다스")
+            assertThat(brandJpaRepository.findById(brand.id).get().name).isEqualTo("아디다스")
+        }
+
+        @DisplayName("존재하지 않는 브랜드면, 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenBrandDoesNotExist() {
+            assertThat(update(-1L, "아디다스").statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        }
+
+        @DisplayName("이름이 4자 미만이면, 400 BAD_REQUEST 응답을 받고 기존 이름이 유지된다.")
+        @Test
+        fun returnsBadRequest_whenNameIsTooShort() {
+            val brand = savedBrand()
+
+            val response = update(brand.id, "나이키")
+
+            assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+            assertThat(brandJpaRepository.findById(brand.id).get().name).isEqualTo("나이키코리아")
+        }
+
+        @DisplayName("관리자가 아니면, 403 FORBIDDEN 응답을 받는다.")
+        @Test
+        fun returnsForbidden_whenNotAdmin() {
+            val brand = savedBrand()
+
+            assertThat(update(brand.id, "아디다스", role = "USER").statusCode).isEqualTo(HttpStatus.FORBIDDEN)
+        }
+    }
+
     @DisplayName("DELETE /api-admin/v1/brands/{brandId}")
     @Nested
     inner class DeleteBrand {

@@ -298,3 +298,135 @@ POST /orders/{id}/confirm    재고 차감 → 포인트 차감 → 주문 확�
 - **주문 API** — `POST /api/v1/orders`, `POST /orders/{orderId}/confirm`, `GET /api/v1/orders`, `GET /orders/{orderId}`.
 - **주문 취소** — 유스케이스 2·3번. 아직 `CANCELED` 상태와 복원 흐름이 없다.
 - **관리자 주문 조회** — 역할 거절 응답을 정해야 한다.
+
+---
+
+## 6. API 계층
+
+도메인 다섯 개가 HTTP 로 이어졌다.
+
+| 메서드 · 경로 | 유스케이스 |
+| --- | --- |
+| `GET /api/v1/brands/{brandId}` | — |
+| `GET /api/v1/products/{productId}` | — (브랜드명·좋아요 수 조합) |
+| `POST · DELETE /api/v1/products/{productId}/likes` | 4 · 5 |
+| `POST /api/v1/points/charge`, `GET /api/v1/points` | 8 |
+| `POST /api/v1/orders`, `POST /{orderId}/confirm` | 1 |
+| `GET /api/v1/orders`, `GET /{orderId}` | — |
+
+### 정한 것
+
+| 항목 | 결정 |
+| --- | --- |
+| 요청자 식별 | `X-USER-ID` 헤더. `User` 엔티티를 두지 않고 헤더 값을 그대로 쓴다 |
+| 헤더 누락 | `400 BAD_REQUEST` |
+
+### TDD 기록
+
+| # | 대상 | RED | GREEN |
+| --- | --- | --- | --- |
+| 1 | 고객 API 4종 | E2E 31건 중 25건 실패 | Facade 4개와 컨트롤러 4개 |
+| 2 | 헤더 누락이 500 으로 떨어짐 | 1건 실패 | `ApiControllerAdvice` 에 `MissingRequestHeaderException` → 400 |
+
+`ApiControllerAdvice` 는 공용 파일이며 핸들러 한 블록만 더했다.
+
+---
+
+## 7. 주문 취소 — 유스케이스 2 · 3
+
+### 재고 차감 시점을 옮겼다
+
+유스케이스 2번에 `재고 복원` 이 있으려면 확정 전에 이미 차감돼 있어야 한다. 그래서 차감을
+`confirm` 에서 `create` 로 옮겼다. 흐름도가 기준이다.
+
+```
+주문 생성   재고 차감 + 주문서 저장 (DRAFT)
+주문 확정   포인트 차감 + 금액 고정 (CONFIRMED)
+주문 취소   재고 복원 (항상) + 확정된 주문이면 포인트 복원
+```
+
+### TDD 기록
+
+| # | 규칙 | RED | GREEN |
+| --- | --- | --- | --- |
+| 1 | 이미 취소된 주문은 다시 취소할 수 없다 | 단위 12건 중 1건 실패 | `Order.cancel` 의 상태 검사 |
+| 2 | 취소된 주문은 확정할 수 없다 | 없음 — 이미 통과 | 없음. `confirm` 이 `DRAFT` 만 허용한다 |
+| 3 | 생성 시 재고가 차감된다 | 통합·E2E 기대값 변경으로 실패 | `OrderService.create` 에서 `decreaseStock` |
+| 4 | 확정 전 취소는 재고를 복원한다 | 통합 1건 실패 | `cancel` 에서 항상 `increaseStock` |
+| 5 | 확정된 주문 취소는 포인트도 복원한다 | 위와 같음 | `isConfirmed()` 일 때 `PointService.refund` |
+
+포인트 복원은 `refund` 라는 이름을 따로 두었다. 잔액이 늘어난다는 점은 충전과 같지만
+호출부에서 사유가 드러나야 하기 때문이다.
+
+---
+
+## 8. 브랜드 · 상품 삭제 — 유스케이스 6 · 7
+
+### TDD 기록
+
+| # | 규칙 | RED | GREEN |
+| --- | --- | --- | --- |
+| 1 | 삭제되지 않은 상품이 남아 있으면 브랜드를 삭제할 수 없다 | 통합 5건 중 2건 실패 | `BrandService.delete` 에 `countActiveByBrandId` 검사 |
+| 2 | 재고가 0이 아니어도 상품이 남아 있으면 거절한다 | 위와 같음 | 세는 것은 재고가 아니라 삭제되지 않은 상품 수다 |
+| 3 | 상품을 삭제하면 좋아요 관계도 지워진다 | 통합 1건 실패 | `ProductService.delete` 에서 `deleteAllByProductId` |
+| 4 | 관리자 삭제 API | E2E 7건 실패 | `AdminRole.guard` 와 관리자 컨트롤러 2개 |
+
+2번이 핵심이다. 브랜드 삭제 조건은 **재고가 아니라 상품의 존재**를 본다.
+상품은 soft delete 지만 좋아요 관계는 실제로 지운다. 관계는 되살릴 대상이 아니다.
+
+---
+
+## 9. 브랜드 CRUD — 유스케이스 9 · 10 · 11 · 12
+
+브랜드는 이것으로 CRUD 가 끝났다.
+
+```
+GET    /api-admin/v1/brands            목록. 삭제된 브랜드 제외, 없으면 빈 List
+POST   /api-admin/v1/brands            생성
+GET    /api-admin/v1/brands/{brandId}  상세
+PUT    /api-admin/v1/brands/{brandId}  수정
+DELETE /api-admin/v1/brands/{brandId}  삭제
+GET    /api/v1/brands/{brandId}        고객 상세
+```
+
+### 이름 규칙이 바뀌었다
+
+유스케이스 9번의 그림대로 **4자리 이상 8자리 이하**로 바꿨다. 이전에는 최대 50자였다.
+메시지도 그림 문구를 그대로 쓴다.
+
+```
+브랜드 명은 공백일 수 없습니다.
+브랜드명은 4자리 이상 8자리 이하입니다.
+```
+
+이름 중복 거절은 **뺐다.** 유스케이스 9번에 없기 때문이다.
+
+이 변경으로 `"나이키"`(3자)를 쓰던 테스트가 규칙에 걸려 `"나이키코리아"` 로 바꿨다.
+`"브랜드${System.nanoTime()}"` 같은 무작위 이름도 8자를 넘어 `"테스트브랜드"` 로 바꿨다.
+그 무작위 이름은 원래 중복 거절을 피하려던 것이라, 중복 규칙이 사라진 뒤로는 필요가 없었다.
+
+### TDD 기록
+
+| # | 규칙 | RED | GREEN |
+| --- | --- | --- | --- |
+| 1 | 이름은 4자 이상 8자 이하다 | 단위 6건 중 2건 실패 | `guardName` 의 범위 검사 |
+| 2 | 수정 이름도 같은 규칙을 지키고, 실패하면 기존 이름이 유지된다 | 단위 10건 중 3건 실패 | `update` 에서 `guardName` 호출 후 대입 |
+| 3 | 브랜드 생성 API | E2E 6건 실패 | `BrandFacade.createBrand` 와 `POST` |
+| 4 | 상세·목록·수정 API | E2E 9건 실패 | `getAll` · `update` 와 컨트롤러 3개 |
+
+2번은 검사 후 대입 순서가 핵심이다. 먼저 대입하면 거절해도 값이 바뀐 뒤다.
+
+목록은 브랜드가 없을 때 빈 List 를 반환한다. 유스케이스 11번에 거절 경로가 없다.
+
+### 검증
+
+`./gradlew :apps:commerce-api:test` — 168건 전체 통과 (ArchUnit 포함)
+`./gradlew :apps:commerce-api:ktlintCheck` — 통과
+
+### 아직 없는 것
+
+- **상품 CRUD** — 관리자 등록·수정·목록·상세와 재고 변경. 삭제만 있다.
+- **고객 상품 목록** — 브랜드 필터·페이징·정렬. 정렬 동률 보조 기준이 미정이다.
+- **내 좋아요 목록** — `LikeService` 에 조회 메서드가 없다.
+- **관리자 주문 목록·상세** — 도메인은 있고 컨트롤러만 없다.
+- **쿠폰 · PG** — 유스케이스 1번의 선택 단계이며 범위 밖이다.

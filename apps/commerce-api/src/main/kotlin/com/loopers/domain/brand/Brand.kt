@@ -18,6 +18,12 @@ class Brand(
         guardName(name)
     }
 
+    fun update(name: String) {
+        guardName(name)
+
+        this.name = name
+    }
+
     private fun guardName(name: String) {
         if (name.isBlank()) throw CoreException(ErrorType.BAD_REQUEST, "브랜드 명은 공백일 수 없습니다.")
         if (name.length !in MIN_NAME_LENGTH..MAX_NAME_LENGTH) {

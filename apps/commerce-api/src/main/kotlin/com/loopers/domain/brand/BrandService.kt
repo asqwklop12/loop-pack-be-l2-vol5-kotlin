@@ -25,6 +25,12 @@ class BrandService(
     /**
      * 삭제되지 않은 상품이 하나라도 남아 있으면 거절한다. 재고가 0인 상품도 남아 있는 상품이다.
      */
+    @Transactional(readOnly = true)
+    fun getAll(): List<Brand> = brandRepository.findAll()
+
+    @Transactional
+    fun update(id: Long, name: String): Brand = get(id).also { it.update(name) }
+
     @Transactional
     fun delete(id: Long) {
         val brand = get(id)

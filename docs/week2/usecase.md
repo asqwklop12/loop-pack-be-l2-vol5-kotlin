@@ -198,3 +198,49 @@ flowchart LR
     classDef fail stroke:#e06c75,color:#e06c75
     class B1 fail
 ```
+
+---
+
+## 10. 브랜드 상세 조회
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[브랜드 조회 요청]
+    A --> B[브랜드 조회]
+    B --> C[브랜드 상세 조회]
+
+    B --> B1[존재하지 않는 브랜드인 경우]
+    B1 -.->|Exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```
+
+---
+
+## 11. 브랜드 목록 조회
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[브랜드 목록 조회 요청]
+    A --> B[브랜드 목록 조회]
+```
+
+아무 브랜드도 없는 경우 빈 List 를 반환한다. 거절 경로가 없다.
+
+---
+
+## 12. 브랜드 수정
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[브랜드 수정 요청]
+    A --> B[브랜드 조회]
+    B --> C[브랜드 수정]
+
+    B --> B1[존재하지 않는 브랜드인 경우]
+    B1 -.->|Exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```
