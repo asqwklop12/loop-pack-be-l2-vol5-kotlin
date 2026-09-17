@@ -244,3 +244,71 @@ flowchart LR
     classDef fail stroke:#e06c75,color:#e06c75
     class B1 fail
 ```
+
+---
+
+## 13. 상품 생성
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[상품 생성 요청]
+    A --> B[상품 명 확인]
+    B --> C[상품 생성]
+    C --> D["재고 생성<br/>초기값: 0"]
+
+    B --> B1["상품 명은 공백일 수 없습니다.<br/>상품명은 2자리 이상 20자리 이하입니다."]
+    B1 -.->|exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```
+
+재고는 생성에서 받지 않는다. 항상 0으로 시작하고 재고 변경으로만 바꾼다.
+
+---
+
+## 14. 상품 상세 조회
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[상품 조회 요청]
+    A --> B[상품 조회]
+    B --> C[상품 상세 조회]
+
+    B --> B1[존재하지 않는 상품인 경우]
+    B1 -.->|Exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```
+
+상세에서 좋아요 수와 재고를 확인할 수 있다.
+
+---
+
+## 15. 상품 목록 조회
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[상품 목록 조회 요청]
+    A --> B[상품 목록 조회]
+```
+
+좋아요 갯수를 확인할 수 있다. 아무 상품도 없는 경우 빈 List 를 반환한다.
+
+---
+
+## 16. 상품 수정
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[상품 수정 요청]
+    A --> B[상품 조회]
+    B --> C[상품 수정]
+
+    B --> B1[존재하지 않는 상품인 경우]
+    B1 -.->|Exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```

@@ -61,9 +61,12 @@ class Product(
     }
 
     private fun guardName(name: String) {
-        if (name.isBlank()) throw CoreException(ErrorType.BAD_REQUEST, "상품 이름은 비어있을 수 없습니다.")
-        if (name.length > MAX_NAME_LENGTH) {
-            throw CoreException(ErrorType.BAD_REQUEST, "상품 이름은 ${MAX_NAME_LENGTH}자를 넘을 수 없습니다.")
+        if (name.isBlank()) throw CoreException(ErrorType.BAD_REQUEST, "상품 명은 공백일 수 없습니다.")
+        if (name.length !in MIN_NAME_LENGTH..MAX_NAME_LENGTH) {
+            throw CoreException(
+                ErrorType.BAD_REQUEST,
+                "상품명은 ${MIN_NAME_LENGTH}자리 이상 ${MAX_NAME_LENGTH}자리 이하입니다.",
+            )
         }
     }
 
@@ -74,7 +77,8 @@ class Product(
     }
 
     companion object {
-        const val MAX_NAME_LENGTH = 100
+        const val MIN_NAME_LENGTH = 2
+        const val MAX_NAME_LENGTH = 20
         val MIN_PRICE = Money(1)
     }
 }

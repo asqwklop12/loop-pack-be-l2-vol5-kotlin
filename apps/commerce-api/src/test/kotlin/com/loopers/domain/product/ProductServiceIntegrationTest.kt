@@ -38,7 +38,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsNotFoundException_whenBrandDoesNotExist() {
             val result = assertThrows<CoreException> {
-                productService.create(brandId = -1L, name = "에어포스1", price = Money(129_000), stock = Stock(5))
+                productService.create(brandId = -1L, name = "에어포스1", price = Money(129_000))
             }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
@@ -51,7 +51,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
             brandJpaRepository.save(brand.apply { delete() })
 
             val result = assertThrows<CoreException> {
-                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(5))
+                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000))
             }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
@@ -63,7 +63,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
             val brand = savedBrand()
 
             val product =
-                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(5))
+                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000))
 
             assertThat(productJpaRepository.findByIdAndDeletedAtIsNull(product.id)).isNotNull()
         }
@@ -85,7 +85,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
         fun throwsNotFoundException_whenProductIsDeleted() {
             val brand = savedBrand()
             val product =
-                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(0))
+                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000))
             productService.delete(product.id)
 
             val result = assertThrows<CoreException> { productService.get(id = product.id) }
@@ -102,7 +102,8 @@ class ProductServiceIntegrationTest @Autowired constructor(
         fun throwsConflictException_whenStockRemains() {
             val brand = savedBrand()
             val product =
-                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(1))
+                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000))
+            productJpaRepository.save(product.apply { changeStock(1) })
 
             val result = assertThrows<CoreException> { productService.delete(product.id) }
 
@@ -114,7 +115,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
         fun removesLikes_whenProductIsDeleted() {
             val brand = savedBrand()
             val product =
-                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(0))
+                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000))
             likeJpaRepository.save(com.loopers.domain.like.Like(userId = 1L, productId = product.id))
             likeJpaRepository.save(com.loopers.domain.like.Like(userId = 2L, productId = product.id))
 
@@ -128,7 +129,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
         fun marksDeletedAt_whenStockIsEmpty() {
             val brand = savedBrand()
             val product =
-                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(0))
+                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000))
 
             productService.delete(product.id)
 

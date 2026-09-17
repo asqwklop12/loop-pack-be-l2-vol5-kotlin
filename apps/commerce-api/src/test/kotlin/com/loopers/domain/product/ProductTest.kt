@@ -43,12 +43,38 @@ class ProductTest {
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
         }
 
-        @DisplayName("이름이 100자를 넘으면, BAD_REQUEST 예외가 발생한다.")
+        @DisplayName("이름이 2자 미만이면, BAD_REQUEST 예외가 발생한다.")
         @Test
-        fun throwsBadRequestException_whenNameIsTooLong() {
-            val result = assertThrows<CoreException> { product(name = "가".repeat(101)) }
+        fun throwsBadRequestException_whenNameIsTooShort() {
+            val result = assertThrows<CoreException> { product(name = "가") }
 
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+        }
+
+        @DisplayName("이름이 20자를 넘으면, BAD_REQUEST 예외가 발생한다.")
+        @Test
+        fun throwsBadRequestException_whenNameIsTooLong() {
+            val result = assertThrows<CoreException> { product(name = "가".repeat(21)) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+        }
+
+        @DisplayName("이름이 2자면, 정상적으로 생성된다.")
+        @Test
+        fun createsProduct_whenNameIsExactlyMinLength() {
+            val product = product(name = "가나")
+
+            assertThat(product.name).isEqualTo("가나")
+        }
+
+        @DisplayName("이름이 20자면, 정상적으로 생성된다.")
+        @Test
+        fun createsProduct_whenNameIsExactlyMaxLength() {
+            val name = "가".repeat(20)
+
+            val product = product(name = name)
+
+            assertThat(product.name).isEqualTo(name)
         }
 
         @DisplayName("가격이 0원이면, BAD_REQUEST 예외가 발생한다.")

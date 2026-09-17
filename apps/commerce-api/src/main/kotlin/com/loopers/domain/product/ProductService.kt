@@ -14,12 +14,20 @@ class ProductService(
     private val brandRepository: BrandRepository,
     private val likeRepository: LikeRepository,
 ) {
+    /**
+     * 재고는 생성에서 받지 않는다. 항상 0 으로 시작하고 재고 변경으로만 바꾼다.
+     */
     @Transactional
-    fun create(brandId: Long, name: String, price: Money, stock: Stock): Product {
+    fun create(brandId: Long, name: String, price: Money): Product {
         requireExistingBrand(brandId)
 
-        return productRepository.save(Product(brandId = brandId, name = name, price = price, stock = stock))
+        return productRepository.save(
+            Product(brandId = brandId, name = name, price = price, stock = Stock(INITIAL_STOCK)),
+        )
     }
+
+    @Transactional(readOnly = true)
+    fun getAll(): List<Product> = productRepository.findAll()
 
     @Transactional(readOnly = true)
     fun get(id: Long): Product {
@@ -51,5 +59,9 @@ class ProductService(
     private fun requireExistingBrand(brandId: Long) {
         brandRepository.find(brandId)
             ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $brandId] 브랜드를 찾을 수 없습니다.")
+    }
+
+    companion object {
+        const val INITIAL_STOCK = 0
     }
 }
