@@ -20,4 +20,6 @@ class ProductFacade(
 
         return ProductInfo.of(product = product, brand = brand, likeCount = likeService.countOf(product.id))
     }
+
+    fun deleteProduct(productId: Long) = productService.delete(productId)
 }

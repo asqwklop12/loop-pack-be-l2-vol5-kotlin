@@ -11,4 +11,7 @@ class ProductRepositoryImpl(
     override fun save(product: Product): Product = productJpaRepository.save(product)
 
     override fun find(id: Long): Product? = productJpaRepository.findByIdAndDeletedAtIsNull(id)
+
+    override fun countActiveByBrandId(brandId: Long): Long =
+        productJpaRepository.countByBrandIdAndDeletedAtIsNull(brandId)
 }

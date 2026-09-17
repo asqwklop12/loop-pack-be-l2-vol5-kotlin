@@ -5,4 +5,5 @@ import org.springframework.data.jpa.repository.JpaRepository
 
 interface ProductJpaRepository : JpaRepository<Product, Long> {
     fun findByIdAndDeletedAtIsNull(id: Long): Product?
+    fun countByBrandIdAndDeletedAtIsNull(brandId: Long): Long
 }

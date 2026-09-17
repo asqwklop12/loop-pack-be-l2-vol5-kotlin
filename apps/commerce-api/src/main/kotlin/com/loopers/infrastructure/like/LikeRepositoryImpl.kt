@@ -18,4 +18,6 @@ class LikeRepositoryImpl(
     override fun countByProductId(productId: Long): Long = likeJpaRepository.countByProductId(productId)
 
     override fun findAllByUserId(userId: Long): List<Like> = likeJpaRepository.findAllByUserId(userId)
+
+    override fun deleteAllByProductId(productId: Long) = likeJpaRepository.deleteAllByProductId(productId)
 }

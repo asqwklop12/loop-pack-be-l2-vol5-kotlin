@@ -1,6 +1,7 @@
 package com.loopers.domain.product
 
 import com.loopers.domain.brand.BrandRepository
+import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.shared.Money
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional
 class ProductService(
     private val productRepository: ProductRepository,
     private val brandRepository: BrandRepository,
+    private val likeRepository: LikeRepository,
 ) {
     @Transactional
     fun create(brandId: Long, name: String, price: Money, stock: Stock): Product {
@@ -42,6 +44,7 @@ class ProductService(
             throw CoreException(ErrorType.CONFLICT, "재고가 남아 있어 삭제할 수 없습니다. [재고 = ${product.stock}]")
         }
 
+        likeRepository.deleteAllByProductId(id)
         product.delete()
     }
 

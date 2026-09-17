@@ -21,6 +21,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
     private val productService: ProductService,
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
+    private val likeJpaRepository: com.loopers.infrastructure.like.LikeJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
 ) {
     @AfterEach
@@ -106,6 +107,20 @@ class ProductServiceIntegrationTest @Autowired constructor(
             val result = assertThrows<CoreException> { productService.delete(product.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.CONFLICT)
+        }
+
+        @DisplayName("상품의 좋아요 관계도 함께 지워진다.")
+        @Test
+        fun removesLikes_whenProductIsDeleted() {
+            val brand = savedBrand()
+            val product =
+                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(0))
+            likeJpaRepository.save(com.loopers.domain.like.Like(userId = 1L, productId = product.id))
+            likeJpaRepository.save(com.loopers.domain.like.Like(userId = 2L, productId = product.id))
+
+            productService.delete(product.id)
+
+            assertThat(likeJpaRepository.countByProductId(product.id)).isEqualTo(0L)
         }
 
         @DisplayName("재고가 0이면, 삭제 시점이 기록된다.")

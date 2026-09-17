@@ -11,4 +11,6 @@ class BrandFacade(
         return brandService.get(id)
             .let { BrandInfo.from(it) }
     }
+
+    fun deleteBrand(id: Long) = brandService.delete(id)
 }
