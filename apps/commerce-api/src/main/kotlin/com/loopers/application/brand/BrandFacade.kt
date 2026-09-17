@@ -12,5 +12,7 @@ class BrandFacade(
             .let { BrandInfo.from(it) }
     }
 
+    fun createBrand(name: String): BrandInfo = BrandInfo.from(brandService.create(name))
+
     fun deleteBrand(id: Long) = brandService.delete(id)
 }

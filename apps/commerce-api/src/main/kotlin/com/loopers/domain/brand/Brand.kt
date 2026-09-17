@@ -15,13 +15,21 @@ class Brand(
         protected set
 
     init {
-        if (name.isBlank()) throw CoreException(ErrorType.BAD_REQUEST, "브랜드 이름은 비어있을 수 없습니다.")
-        if (name.length > MAX_NAME_LENGTH) {
-            throw CoreException(ErrorType.BAD_REQUEST, "브랜드 이름은 ${MAX_NAME_LENGTH}자를 넘을 수 없습니다.")
+        guardName(name)
+    }
+
+    private fun guardName(name: String) {
+        if (name.isBlank()) throw CoreException(ErrorType.BAD_REQUEST, "브랜드 명은 공백일 수 없습니다.")
+        if (name.length !in MIN_NAME_LENGTH..MAX_NAME_LENGTH) {
+            throw CoreException(
+                ErrorType.BAD_REQUEST,
+                "브랜드명은 ${MIN_NAME_LENGTH}자리 이상 ${MAX_NAME_LENGTH}자리 이하입니다.",
+            )
         }
     }
 
     companion object {
-        const val MAX_NAME_LENGTH = 50
+        const val MIN_NAME_LENGTH = 4
+        const val MAX_NAME_LENGTH = 8
     }
 }

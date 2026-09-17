@@ -24,23 +24,6 @@ class BrandServiceIntegrationTest @Autowired constructor(
         databaseCleanUp.truncateAllTables()
     }
 
-    @DisplayName("브랜드를 등록할 때, ")
-    @Nested
-    inner class Create {
-        @DisplayName("같은 이름의 브랜드가 이미 있으면, CONFLICT 예외가 발생한다.")
-        @Test
-        fun throwsConflictException_whenNameAlreadyExists() {
-            // arrange
-            brandService.create(name = "나이키")
-
-            // act
-            val result = assertThrows<CoreException> { brandService.create(name = "나이키") }
-
-            // assert
-            assertThat(result.errorType).isEqualTo(ErrorType.CONFLICT)
-        }
-    }
-
     @DisplayName("브랜드를 조회할 때, ")
     @Nested
     inner class Get {
@@ -58,7 +41,7 @@ class BrandServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsNotFoundException_whenBrandIsDeleted() {
             // arrange
-            val saved = brandService.create(name = "나이키")
+            val saved = brandService.create(name = "나이키코리아")
             brandJpaRepository.save(saved.apply { delete() })
 
             // act

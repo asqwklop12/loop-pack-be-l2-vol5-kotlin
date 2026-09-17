@@ -4,6 +4,8 @@ import com.loopers.application.brand.BrandFacade
 import com.loopers.interfaces.api.ApiResponse
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -13,6 +15,18 @@ import org.springframework.web.bind.annotation.RestController
 class BrandV1AdminController(
     private val brandFacade: BrandFacade,
 ) {
+    @PostMapping
+    fun createBrand(
+        @RequestHeader(value = "X-USER-ROLE") role: String,
+        @RequestBody request: AdminV1Dto.BrandV1.CreateRequest,
+    ): ApiResponse<AdminV1Dto.BrandV1.Response> {
+        AdminRole.guard(role)
+
+        return brandFacade.createBrand(request.name)
+            .let { AdminV1Dto.BrandV1.Response.from(it) }
+            .let { ApiResponse.success(it) }
+    }
+
     @DeleteMapping("/{brandId}")
     fun deleteBrand(
         @RequestHeader(value = "X-USER-ROLE") role: String,

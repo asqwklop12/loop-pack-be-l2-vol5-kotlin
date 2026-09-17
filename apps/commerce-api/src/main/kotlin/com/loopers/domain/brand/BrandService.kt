@@ -13,9 +13,6 @@ class BrandService(
 ) {
     @Transactional
     fun create(name: String): Brand {
-        brandRepository.findByName(name)
-            ?.let { throw CoreException(ErrorType.CONFLICT, "[name = $name] 이미 존재하는 브랜드입니다.") }
-
         return brandRepository.save(Brand(name = name))
     }
 

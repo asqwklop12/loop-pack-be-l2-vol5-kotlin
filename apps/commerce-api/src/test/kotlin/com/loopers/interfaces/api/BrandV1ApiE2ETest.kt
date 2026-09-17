@@ -40,7 +40,7 @@ class BrandV1ApiE2ETest @Autowired constructor(
         @Test
         fun returnsBrandInfo_whenValidIdIsProvided() {
             // arrange
-            val brand = brandJpaRepository.save(Brand(name = "나이키"))
+            val brand = brandJpaRepository.save(Brand(name = "나이키코리아"))
 
             // act
             val responseType = object : ParameterizedTypeReference<ApiResponse<BrandV1Dto.BrandResponse>>() {}
@@ -59,7 +59,7 @@ class BrandV1ApiE2ETest @Autowired constructor(
         @Test
         fun returnsNotFound_whenBrandIsDeleted() {
             // arrange
-            val brand = brandJpaRepository.save(Brand(name = "나이키"))
+            val brand = brandJpaRepository.save(Brand(name = "나이키코리아"))
             brandJpaRepository.save(brand.apply { delete() })
 
             // act

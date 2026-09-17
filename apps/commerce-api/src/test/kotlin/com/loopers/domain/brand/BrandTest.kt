@@ -17,7 +17,7 @@ class BrandTest {
         @Test
         fun createsBrand_whenNameIsValid() {
             // arrange
-            val name = "나이키"
+            val name = "나이키코리아"
 
             // act
             val brand = Brand(name = name)
@@ -29,11 +29,24 @@ class BrandTest {
             )
         }
 
-        @DisplayName("이름이 50자면, 정상적으로 생성된다.")
+        @DisplayName("이름이 4자면, 정상적으로 생성된다.")
+        @Test
+        fun createsBrand_whenNameIsExactlyMinLength() {
+            // arrange
+            val name = "가".repeat(4)
+
+            // act
+            val brand = Brand(name = name)
+
+            // assert
+            assertThat(brand.name).isEqualTo(name)
+        }
+
+        @DisplayName("이름이 8자면, 정상적으로 생성된다.")
         @Test
         fun createsBrand_whenNameIsExactlyMaxLength() {
             // arrange
-            val name = "가".repeat(50)
+            val name = "가".repeat(8)
 
             // act
             val brand = Brand(name = name)
@@ -55,11 +68,24 @@ class BrandTest {
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
         }
 
-        @DisplayName("이름이 50자를 넘으면, BAD_REQUEST 예외가 발생한다.")
+        @DisplayName("이름이 4자 미만이면, BAD_REQUEST 예외가 발생한다.")
+        @Test
+        fun throwsBadRequestException_whenNameIsTooShort() {
+            // arrange
+            val name = "가".repeat(3)
+
+            // act
+            val result = assertThrows<CoreException> { Brand(name = name) }
+
+            // assert
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+        }
+
+        @DisplayName("이름이 8자를 넘으면, BAD_REQUEST 예외가 발생한다.")
         @Test
         fun throwsBadRequestException_whenNameIsTooLong() {
             // arrange
-            val name = "가".repeat(51)
+            val name = "가".repeat(9)
 
             // act
             val result = assertThrows<CoreException> { Brand(name = name) }

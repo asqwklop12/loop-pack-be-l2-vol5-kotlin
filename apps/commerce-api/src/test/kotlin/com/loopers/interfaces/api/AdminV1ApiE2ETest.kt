@@ -8,6 +8,7 @@ import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandJpaRepository
 import com.loopers.infrastructure.like.LikeJpaRepository
 import com.loopers.infrastructure.product.ProductJpaRepository
+import com.loopers.interfaces.api.admin.AdminV1Dto
 import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -41,7 +42,7 @@ class AdminV1ApiE2ETest @Autowired constructor(
 
     private val voidType = object : ParameterizedTypeReference<ApiResponse<Any>>() {}
 
-    private fun savedBrand(name: String = "나이키") = brandJpaRepository.save(Brand(name = name))
+    private fun savedBrand(name: String = "나이키코리아") = brandJpaRepository.save(Brand(name = name))
 
     private fun savedProduct(brandId: Long, stock: Int = 0) = productJpaRepository.save(
         Product(brandId = brandId, name = "에어포스1", price = Money(129_000), stock = Stock(stock)),
@@ -49,6 +50,52 @@ class AdminV1ApiE2ETest @Autowired constructor(
 
     private fun delete(url: String, role: String? = "ADMIN") =
         testRestTemplate.exchange(url, HttpMethod.DELETE, HttpEntity<Any>(headers(role)), voidType)
+
+    private val brandType = object : ParameterizedTypeReference<ApiResponse<AdminV1Dto.BrandV1.Response>>() {}
+
+    private fun createBrand(name: String = "나이키코리아", role: String? = "ADMIN") = testRestTemplate.exchange(
+        "/api-admin/v1/brands",
+        HttpMethod.POST,
+        HttpEntity(AdminV1Dto.BrandV1.CreateRequest(name), headers(role)),
+        brandType,
+    )
+
+    @DisplayName("POST /api-admin/v1/brands")
+    @Nested
+    inner class CreateBrand {
+        @DisplayName("유효한 이름이면, 저장된 브랜드를 반환한다.")
+        @Test
+        fun createsBrand_whenNameIsValid() {
+            val response = createBrand()
+
+            assertThat(response.statusCode.is2xxSuccessful).isTrue()
+            assertThat(response.body?.data?.name).isEqualTo("나이키코리아")
+        }
+
+        @DisplayName("이름이 공백이면, 400 BAD_REQUEST 응답을 받는다.")
+        @Test
+        fun returnsBadRequest_whenNameIsBlank() {
+            assertThat(createBrand(name = "     ").statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        }
+
+        @DisplayName("이름이 4자 미만이면, 400 BAD_REQUEST 응답을 받는다.")
+        @Test
+        fun returnsBadRequest_whenNameIsTooShort() {
+            assertThat(createBrand(name = "나이키").statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        }
+
+        @DisplayName("이름이 8자를 넘으면, 400 BAD_REQUEST 응답을 받는다.")
+        @Test
+        fun returnsBadRequest_whenNameIsTooLong() {
+            assertThat(createBrand(name = "가".repeat(9)).statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        }
+
+        @DisplayName("관리자가 아니면, 403 FORBIDDEN 응답을 받는다.")
+        @Test
+        fun returnsForbidden_whenNotAdmin() {
+            assertThat(createBrand(role = "USER").statusCode).isEqualTo(HttpStatus.FORBIDDEN)
+        }
+    }
 
     @DisplayName("DELETE /api-admin/v1/brands/{brandId}")
     @Nested

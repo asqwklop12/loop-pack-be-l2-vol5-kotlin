@@ -181,3 +181,20 @@ flowchart LR
     class B1 fail
 ```
 
+
+---
+
+## 9. 브랜드 생성
+
+```mermaid
+flowchart LR
+    관리자([관리자]) --> A[브랜드 생성 요청]
+    A --> B[브랜드 명 확인]
+    B --> C[브랜드 생성]
+
+    B --> B1["브랜드 명은 공백일 수 없습니다.<br/>브랜드명은 4자리 이상 8자리 이하입니다."]
+    B1 -.->|exception| 관리자
+
+    classDef fail stroke:#e06c75,color:#e06c75
+    class B1 fail
+```

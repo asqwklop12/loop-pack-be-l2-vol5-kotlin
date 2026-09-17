@@ -45,7 +45,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
         @DisplayName("삭제되지 않은 상품이 남아 있으면, CONFLICT 예외가 발생한다.")
         @Test
         fun throwsConflictException_whenActiveProductRemains() {
-            val brand = brandService.create(name = "나이키")
+            val brand = brandService.create(name = "나이키코리아")
             savedProduct(brand.id)
 
             val result = assertThrows<CoreException> { brandService.delete(brand.id) }
@@ -57,7 +57,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
         @DisplayName("재고가 0이 아니어도, 상품이 남아 있으면 거절한다.")
         @Test
         fun throwsConflictException_evenWhenStockRemains() {
-            val brand = brandService.create(name = "나이키")
+            val brand = brandService.create(name = "나이키코리아")
             savedProduct(brand.id, stock = 3)
 
             val result = assertThrows<CoreException> { brandService.delete(brand.id) }
@@ -68,7 +68,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
         @DisplayName("상품이 모두 삭제됐으면, 브랜드를 삭제할 수 있다.")
         @Test
         fun deletesBrand_whenAllProductsAreDeleted() {
-            val brand = brandService.create(name = "나이키")
+            val brand = brandService.create(name = "나이키코리아")
             val product = savedProduct(brand.id, stock = 3)
             productJpaRepository.save(product.apply { delete() })
 
@@ -80,7 +80,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
         @DisplayName("연결된 상품이 없으면, 삭제 시점이 기록된다.")
         @Test
         fun marksDeletedAt_whenNoProduct() {
-            val brand = brandService.create(name = "나이키")
+            val brand = brandService.create(name = "나이키코리아")
 
             brandService.delete(brand.id)
 
