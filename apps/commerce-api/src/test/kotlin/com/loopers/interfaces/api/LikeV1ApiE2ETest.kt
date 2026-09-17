@@ -39,7 +39,7 @@ class LikeV1ApiE2ETest @Autowired constructor(
         HttpHeaders().apply { set("X-USER-ID", userId.toString()) }
 
     private fun savedProduct(): Product {
-        val brand = brandJpaRepository.save(Brand(name = "나이키"))
+        val brand = brandJpaRepository.save(Brand(name = "나이키코리아"))
         return productJpaRepository.save(
             Product(brandId = brand.id, name = "에어포스1", price = Money(129_000), stock = Stock(5)),
         )
