@@ -3,6 +3,7 @@ package com.loopers.application.product
 import com.loopers.domain.brand.BrandService
 import com.loopers.domain.like.LikeService
 import com.loopers.domain.product.Product
+import com.loopers.domain.product.ProductSearch
 import com.loopers.domain.product.ProductService
 import com.loopers.domain.shared.Money
 import org.springframework.stereotype.Component
@@ -24,6 +25,26 @@ class ProductFacade(
     }
 
     fun getProducts(): List<ProductInfo> = productService.getAll().map { withBrand(it) }
+
+    fun searchProducts(search: ProductSearch): ProductPage {
+        val products = productService.search(search).map { withBrand(it) }
+
+        return ProductPage(
+            items = products,
+            page = search.page,
+            size = search.size,
+            totalCount = productService.countBy(search.brandId),
+        )
+    }
+
+    /**
+     * 내가 좋아요한 상품 목록. 삭제된 상품은 제외한다.
+     */
+    fun getLikedProducts(userId: Long): List<ProductInfo> {
+        val productIds = likeService.likedProductIds(userId)
+
+        return productService.getAllByIds(productIds).map { withBrand(it) }
+    }
 
     fun createProduct(brandId: Long, name: String, price: Long): ProductInfo =
         withBrand(productService.create(brandId = brandId, name = name, price = Money(price)))

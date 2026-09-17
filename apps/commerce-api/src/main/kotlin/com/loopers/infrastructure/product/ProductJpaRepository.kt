@@ -7,4 +7,5 @@ interface ProductJpaRepository : JpaRepository<Product, Long> {
     fun findByIdAndDeletedAtIsNull(id: Long): Product?
     fun countByBrandIdAndDeletedAtIsNull(brandId: Long): Long
     fun findAllByDeletedAtIsNull(): List<Product>
+    fun findAllByIdInAndDeletedAtIsNull(ids: List<Long>): List<Product>
 }

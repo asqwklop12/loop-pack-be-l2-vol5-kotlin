@@ -30,6 +30,18 @@ class ProductService(
     fun getAll(): List<Product> = productRepository.findAll()
 
     @Transactional(readOnly = true)
+    fun search(search: ProductSearch): List<Product> = productRepository.search(search)
+
+    @Transactional(readOnly = true)
+    fun countBy(brandId: Long?): Long = productRepository.countBy(brandId)
+
+    /**
+     * 삭제된 상품은 제외한다. 없는 id 는 조용히 빠진다.
+     */
+    @Transactional(readOnly = true)
+    fun getAllByIds(ids: List<Long>): List<Product> = productRepository.findAllByIds(ids)
+
+    @Transactional(readOnly = true)
     fun get(id: Long): Product {
         return productRepository.find(id)
             ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $id] 상품을 찾을 수 없습니다.")

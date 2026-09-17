@@ -32,4 +32,8 @@ class LikeService(
 
     @Transactional(readOnly = true)
     fun countOf(productId: Long): Long = likeRepository.countByProductId(productId)
+
+    @Transactional(readOnly = true)
+    fun likedProductIds(userId: Long): List<Long> =
+        likeRepository.findAllByUserId(userId).map { it.productId }
 }
