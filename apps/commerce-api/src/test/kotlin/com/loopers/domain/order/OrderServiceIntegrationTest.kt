@@ -68,9 +68,9 @@ class OrderServiceIntegrationTest @Autowired constructor(
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
         }
 
-        @DisplayName("단가는 주문 시점의 상품 가격으로 저장되고, 재고는 줄지 않는다.")
+        @DisplayName("단가는 주문 시점의 상품 가격으로 저장되고, 재고가 차감된다.")
         @Test
-        fun storesUnitPrice_andDoesNotDecreaseStock() {
+        fun storesUnitPrice_andDecreasesStock() {
             val product = savedProduct(price = 1_000, stock = 5)
 
             val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
@@ -79,8 +79,98 @@ class OrderServiceIntegrationTest @Autowired constructor(
                 { assertThat(order.status).isEqualTo(OrderStatus.DRAFT) },
                 { assertThat(order.totalAmount).isEqualTo(Money(2_000)) },
                 { assertThat(order.items.first().unitPrice).isEqualTo(Money(1_000)) },
+                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(3)) },
+            )
+        }
+    }
+
+    @DisplayName("주문을 생성할 때 재고가 부족하면, ")
+    @Nested
+    inner class CreateWithoutStock {
+        @DisplayName("BAD_REQUEST 예외가 발생하고 재고가 그대로 유지된다.")
+        @Test
+        fun throwsBadRequestException_andKeepsStock() {
+            val product = savedProduct(price = 1_000, stock = 1)
+
+            val result = assertThrows<CoreException> {
+                orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+            }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(1))
+        }
+    }
+
+    @DisplayName("주문을 취소할 때, ")
+    @Nested
+    inner class Cancel {
+        @DisplayName("확정 전 주문을 취소하면, 재고가 복원된다.")
+        @Test
+        fun restoresStock_whenDraft() {
+            val product = savedProduct(price = 1_000, stock = 5)
+            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+
+            val canceled = orderService.cancel(userId, order.id)
+
+            assertAll(
+                { assertThat(canceled.status).isEqualTo(OrderStatus.CANCELED) },
+                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money.ZERO) },
+            )
+        }
+
+        @DisplayName("확정된 주문을 취소하면, 포인트와 재고가 모두 복원된다.")
+        @Test
+        fun restoresPointAndStock_whenConfirmed() {
+            val product = savedProduct(price = 7_000, stock = 5)
+            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            pointService.charge(userId, Money(10_000))
+            orderService.confirm(userId, order.id)
+
+            val canceled = orderService.cancel(userId, order.id)
+
+            assertAll(
+                { assertThat(canceled.status).isEqualTo(OrderStatus.CANCELED) },
+                { assertThat(canceled.paidAmount).isEqualTo(Money(7_000)) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
             )
+        }
+
+        @DisplayName("남의 주문이면, 없는 주문과 같은 NOT_FOUND 예외가 발생한다.")
+        @Test
+        fun throwsNotFoundException_whenNotOwner() {
+            val product = savedProduct()
+            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+
+            val result = assertThrows<CoreException> { orderService.cancel(userId = 999L, orderId = order.id) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
+        }
+
+        @DisplayName("이미 취소된 주문을 다시 취소하면, CONFLICT 예외가 발생한다.")
+        @Test
+        fun throwsConflictException_whenAlreadyCanceled() {
+            val product = savedProduct()
+            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            orderService.cancel(userId, order.id)
+
+            val result = assertThrows<CoreException> { orderService.cancel(userId, order.id) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.CONFLICT)
+        }
+
+        @DisplayName("취소된 주문은 확정할 수 없다.")
+        @Test
+        fun throwsConflictException_whenConfirmingCanceledOrder() {
+            val product = savedProduct()
+            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            pointService.charge(userId, Money(10_000))
+            orderService.cancel(userId, order.id)
+
+            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.CONFLICT)
         }
     }
 
@@ -98,21 +188,7 @@ class OrderServiceIntegrationTest @Autowired constructor(
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
         }
 
-        @DisplayName("재고가 부족하면, BAD_REQUEST 예외가 발생하고 포인트가 줄지 않는다.")
-        @Test
-        fun throwsBadRequestException_whenStockIsNotEnough() {
-            val product = savedProduct(price = 1_000, stock = 1)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
-            pointService.charge(userId, Money(10_000))
-            productJpaRepository.save(product.apply { changeStock(0) })
-
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
-
-            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
-            assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000))
-        }
-
-        @DisplayName("잔액이 부족하면, BAD_REQUEST 예외가 발생하고 재고가 복원된다.")
+        @DisplayName("잔액이 부족하면, BAD_REQUEST 예외가 발생하고 주문이 DRAFT 로 남는다.")
         @Test
         fun throwsBadRequestException_whenBalanceIsNotEnough() {
             val product = savedProduct(price = 10_000, stock = 5)
@@ -122,7 +198,7 @@ class OrderServiceIntegrationTest @Autowired constructor(
             val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
-            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5))
+            assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT)
         }
 
         @DisplayName("확정하면, 재고와 잔액이 줄고 결제액이 저장된다.")

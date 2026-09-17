@@ -71,7 +71,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
     @DisplayName("POST /api/v1/orders")
     @Nested
     inner class Create {
-        @DisplayName("주문을 만들면, DRAFT 와 합계를 반환하고 재고는 줄지 않는다.")
+        @DisplayName("주문을 만들면, DRAFT 와 합계를 반환하고 재고가 차감된다.")
         @Test
         fun returnsDraftOrder() {
             val product = savedProduct(price = 1_000, stock = 5)
@@ -83,7 +83,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
                 { assertThat(response.body?.data?.status).isEqualTo("DRAFT") },
                 { assertThat(response.body?.data?.totalAmount).isEqualTo(2_000L) },
                 { assertThat(response.body?.data?.paidAmount).isNull() },
-                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
+                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(3)) },
             )
         }
 
@@ -137,7 +137,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
     @DisplayName("POST /api/v1/orders/{orderId}/confirm")
     @Nested
     inner class Confirm {
-        @DisplayName("확정하면, CONFIRMED 와 결제액을 반환하고 재고·잔액이 줄어든다.")
+        @DisplayName("확정하면, CONFIRMED 와 결제액을 반환하고 잔액이 줄어든다. 재고는 생성 때 이미 줄었다.")
         @Test
         fun returnsConfirmedOrder() {
             val product = savedProduct(price = 7_000, stock = 5)
@@ -155,7 +155,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
             )
         }
 
-        @DisplayName("잔액이 부족하면, 400 BAD_REQUEST 응답을 받고 재고가 유지된다.")
+        @DisplayName("잔액이 부족하면, 400 BAD_REQUEST 응답을 받고 주문이 DRAFT 로 남는다.")
         @Test
         fun returnsBadRequest_whenBalanceIsNotEnough() {
             val product = savedProduct(price = 10_000, stock = 5)
@@ -164,7 +164,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
             val response = confirm(orderId)
 
             assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
-            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5))
+            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(4))
         }
 
         @DisplayName("이미 확정된 주문을 다시 확정하면, 409 CONFLICT 응답을 받는다.")

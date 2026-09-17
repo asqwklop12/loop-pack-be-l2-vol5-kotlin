@@ -21,6 +21,7 @@ class OrderService(
     fun create(userId: Long, lines: List<OrderCommand.Line>): Order {
         val items = lines.map { line ->
             val product = productService.get(line.productId)
+            product.decreaseStock(line.quantity)
             OrderItem(productId = product.id, quantity = line.quantity, unitPrice = product.price)
         }
 
@@ -48,11 +49,28 @@ class OrderService(
     fun confirm(userId: Long, orderId: Long): Order {
         val order = get(userId, orderId)
 
-        order.items.forEach { item ->
-            productService.get(item.productId).decreaseStock(item.quantity)
-        }
         pointService.pay(userId, order.totalAmount)
         order.confirm(order.totalAmount)
+
+        return orderRepository.save(order)
+    }
+
+    /**
+     * 재고는 주문 생성에서 잡았으므로 어느 상태에서 취소하든 되돌린다.
+     * 포인트는 확정에서만 차감하므로 확정된 주문만 복원한다.
+     */
+    @Transactional
+    fun cancel(userId: Long, orderId: Long): Order {
+        val order = get(userId, orderId)
+        val confirmed = order.isConfirmed()
+        order.cancel()
+
+        if (confirmed) {
+            order.paidAmount?.let { pointService.refund(userId, it) }
+        }
+        order.items.forEach { item ->
+            productService.get(item.productId).increaseStock(item.quantity)
+        }
 
         return orderRepository.save(order)
     }

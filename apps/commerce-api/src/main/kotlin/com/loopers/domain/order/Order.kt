@@ -55,6 +55,19 @@ class Order(
 
     fun isOwnedBy(userId: Long): Boolean = this.userId == userId
 
+    fun isConfirmed(): Boolean = status == OrderStatus.CONFIRMED
+
+    /**
+     * 주문 기록은 남기고 상태만 바꾼다. 확정된 금액은 그대로 둔다.
+     */
+    fun cancel() {
+        if (status == OrderStatus.CANCELED) {
+            throw CoreException(ErrorType.CONFLICT, "이미 취소된 주문입니다.")
+        }
+
+        this.status = OrderStatus.CANCELED
+    }
+
     /**
      * 확정은 금액이 고정되는 사건이다. 결제액은 합계와 같아야 한다.
      */
