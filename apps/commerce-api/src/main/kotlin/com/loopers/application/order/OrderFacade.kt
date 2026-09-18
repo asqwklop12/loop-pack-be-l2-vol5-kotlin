@@ -17,6 +17,10 @@ class OrderFacade(
     fun confirm(userId: Long, orderId: Long): OrderInfo =
         OrderInfo.from(orderService.confirm(userId, orderId))
 
+    @Transactional
+    fun cancel(userId: Long, orderId: Long): OrderInfo =
+        OrderInfo.from(orderService.cancel(userId, orderId))
+
     @Transactional(readOnly = true)
     fun get(userId: Long, orderId: Long): OrderInfo =
         OrderInfo.from(orderService.get(userId, orderId))

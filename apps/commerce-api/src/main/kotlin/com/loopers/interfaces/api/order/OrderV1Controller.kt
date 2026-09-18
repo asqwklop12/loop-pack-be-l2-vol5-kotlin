@@ -4,6 +4,7 @@ import com.loopers.application.order.OrderFacade
 import com.loopers.application.order.OrderInfo
 import com.loopers.domain.order.OrderCommand
 import com.loopers.interfaces.api.ApiResponse
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -35,6 +36,16 @@ class OrderV1Controller(
         @PathVariable(value = "orderId") orderId: Long,
     ): ApiResponse<OrderV1Dto.OrderResponse> {
         return orderFacade.confirm(userId, orderId)
+            .let { toResponse(it) }
+            .let { ApiResponse.success(it) }
+    }
+
+    @DeleteMapping("/{orderId}")
+    fun cancel(
+        @RequestHeader(value = "X-USER-ID") userId: Long,
+        @PathVariable(value = "orderId") orderId: Long,
+    ): ApiResponse<OrderV1Dto.OrderResponse> {
+        return orderFacade.cancel(userId, orderId)
             .let { toResponse(it) }
             .let { ApiResponse.success(it) }
     }

@@ -188,6 +188,87 @@ class OrderV1ApiE2ETest @Autowired constructor(
         }
     }
 
+    @DisplayName("DELETE /api/v1/orders/{orderId}")
+    @Nested
+    inner class Cancel {
+        private fun cancel(orderId: Long, userId: Long = this@OrderV1ApiE2ETest.userId) =
+            testRestTemplate.exchange(
+                "/api/v1/orders/$orderId",
+                HttpMethod.DELETE,
+                HttpEntity<Any>(headers(userId)),
+                orderType,
+            )
+
+        @DisplayName("확정 전 주문을 취소하면, CANCELED 가 되고 재고가 복원된다.")
+        @Test
+        fun returnsCanceled_andRestoresStock() {
+            val product = savedProduct(stock = 5)
+            val orderId = createOrder(product.id, quantity = 2).body!!.data!!.id
+
+            val response = cancel(orderId)
+
+            assertAll(
+                { assertThat(response.statusCode.is2xxSuccessful).isTrue() },
+                { assertThat(response.body?.data?.status).isEqualTo("CANCELED") },
+                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
+            )
+        }
+
+        @DisplayName("확정된 주문을 취소하면, 포인트와 재고가 모두 복원된다.")
+        @Test
+        fun restoresPointAndStock_whenConfirmed() {
+            val product = savedProduct(price = 7_000, stock = 5)
+            val orderId = createOrder(product.id).body!!.data!!.id
+            pointService.charge(userId, Money(10_000))
+            confirm(orderId)
+
+            val response = cancel(orderId)
+
+            assertAll(
+                { assertThat(response.body?.data?.status).isEqualTo("CANCELED") },
+                { assertThat(response.body?.data?.paidAmount).isEqualTo(7_000L) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
+                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
+            )
+        }
+
+        @DisplayName("이미 취소된 주문을 다시 취소하면, 409 CONFLICT 응답을 받는다.")
+        @Test
+        fun returnsConflict_whenAlreadyCanceled() {
+            val product = savedProduct()
+            val orderId = createOrder(product.id).body!!.data!!.id
+            cancel(orderId)
+
+            assertThat(cancel(orderId).statusCode).isEqualTo(HttpStatus.CONFLICT)
+        }
+
+        @DisplayName("취소된 주문은 확정할 수 없다.")
+        @Test
+        fun returnsConflict_whenConfirmingCanceledOrder() {
+            val product = savedProduct()
+            val orderId = createOrder(product.id).body!!.data!!.id
+            pointService.charge(userId, Money(10_000))
+            cancel(orderId)
+
+            assertThat(confirm(orderId).statusCode).isEqualTo(HttpStatus.CONFLICT)
+        }
+
+        @DisplayName("없는 주문이면, 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenOrderDoesNotExist() {
+            assertThat(cancel(-1L).statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        }
+
+        @DisplayName("남의 주문이면, 없는 주문과 같은 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenNotOwner() {
+            val product = savedProduct()
+            val orderId = createOrder(product.id).body!!.data!!.id
+
+            assertThat(cancel(orderId, userId = 999L).statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        }
+    }
+
     @DisplayName("GET /api/v1/orders")
     @Nested
     inner class GetAll {
