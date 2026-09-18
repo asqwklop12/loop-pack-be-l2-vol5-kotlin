@@ -11,45 +11,45 @@ import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.api.assertThrows
 
 class OrderTest {
-    private fun item(productId: Long = 1L, quantity: Int = 1, unitPrice: Long = 1_000) =
-        OrderItem(productId = productId, quantity = quantity, unitPrice = Money(unitPrice))
+    private fun line(productId: Long = 1L, quantity: Int = 1, unitPrice: Long = 1_000) =
+        OrderLine(productId = productId, quantity = quantity, unitPrice = Money(unitPrice))
 
     @DisplayName("주문을 만들 때, ")
     @Nested
     inner class Create {
         @DisplayName("품목이 하나도 없으면, BAD_REQUEST 예외가 발생한다.")
         @Test
-        fun throwsBadRequestException_whenItemsAreEmpty() {
-            val result = assertThrows<CoreException> { Order(userId = 1L, items = emptyList()) }
+        fun throwsBadRequestException_whenLinesAreEmpty() {
+            val result = assertThrows<CoreException> { Order(userId = 1L, lines = emptyList()) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
         }
 
         @DisplayName("같은 상품이 두 번 들어오면, BAD_REQUEST 예외가 발생한다.")
         @Test
-        fun throwsBadRequestException_whenItemsHaveDuplicateProduct() {
-            val items = listOf(item(productId = 1L), item(productId = 1L))
+        fun throwsBadRequestException_whenLinesHaveDuplicateProduct() {
+            val lines = listOf(line(productId = 1L), line(productId = 1L))
 
-            val result = assertThrows<CoreException> { Order(userId = 1L, items = items) }
+            val result = assertThrows<CoreException> { Order(userId = 1L, lines = lines) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
         }
 
-        @DisplayName("합계는 품목 금액의 합이고, DRAFT 로 시작한다.")
+        @DisplayName("합계는 line 금액의 합이고, DRAFT 로 시작한다.")
         @Test
-        fun sumsItemAmounts_andStartsAsDraft() {
-            val items = listOf(
-                item(productId = 1L, quantity = 2, unitPrice = 1_000),
-                item(productId = 2L, quantity = 3, unitPrice = 500),
+        fun sumsLineAmounts_andStartsAsDraft() {
+            val lines = listOf(
+                line(productId = 1L, quantity = 2, unitPrice = 1_000),
+                line(productId = 2L, quantity = 3, unitPrice = 500),
             )
 
-            val order = Order(userId = 1L, items = items)
+            val order = Order(userId = 1L, lines = lines)
 
             assertAll(
                 { assertThat(order.totalAmount).isEqualTo(Money(3_500)) },
                 { assertThat(order.status).isEqualTo(OrderStatus.DRAFT) },
                 { assertThat(order.paidAmount).isNull() },
-                { assertThat(order.items).hasSize(2) },
+                { assertThat(order.lines).hasSize(2) },
             )
         }
     }
@@ -60,7 +60,7 @@ class OrderTest {
         @DisplayName("결제액이 합계와 다르면, BAD_REQUEST 예외가 발생하고 DRAFT 가 유지된다.")
         @Test
         fun throwsBadRequestException_whenPaidAmountDiffersFromTotal() {
-            val order = Order(userId = 1L, items = listOf(item(quantity = 2, unitPrice = 1_000)))
+            val order = Order(userId = 1L, lines = listOf(line(quantity = 2, unitPrice = 1_000)))
 
             val result = assertThrows<CoreException> { order.confirm(Money(1_000)) }
 
@@ -71,7 +71,7 @@ class OrderTest {
         @DisplayName("이미 확정된 주문을 다시 확정하면, CONFLICT 예외가 발생한다.")
         @Test
         fun throwsConflictException_whenAlreadyConfirmed() {
-            val order = Order(userId = 1L, items = listOf(item(quantity = 2, unitPrice = 1_000)))
+            val order = Order(userId = 1L, lines = listOf(line(quantity = 2, unitPrice = 1_000)))
             order.confirm(Money(2_000))
 
             val result = assertThrows<CoreException> { order.confirm(Money(2_000)) }
@@ -82,7 +82,7 @@ class OrderTest {
         @DisplayName("확정하면, 결제액이 저장되고 CONFIRMED 가 된다.")
         @Test
         fun storesPaidAmount_andBecomesConfirmed() {
-            val order = Order(userId = 1L, items = listOf(item(quantity = 2, unitPrice = 1_000)))
+            val order = Order(userId = 1L, lines = listOf(line(quantity = 2, unitPrice = 1_000)))
 
             order.confirm(Money(2_000))
 
@@ -100,7 +100,7 @@ class OrderTest {
         @DisplayName("소유자가 아니면, false 를 반환한다.")
         @Test
         fun returnsFalse_whenNotOwner() {
-            val order = Order(userId = 1L, items = listOf(item()))
+            val order = Order(userId = 1L, lines = listOf(line()))
 
             assertThat(order.isOwnedBy(2L)).isFalse()
         }
@@ -108,7 +108,7 @@ class OrderTest {
         @DisplayName("소유자면, true 를 반환한다.")
         @Test
         fun returnsTrue_whenOwner() {
-            val order = Order(userId = 1L, items = listOf(item()))
+            val order = Order(userId = 1L, lines = listOf(line()))
 
             assertThat(order.isOwnedBy(1L)).isTrue()
         }

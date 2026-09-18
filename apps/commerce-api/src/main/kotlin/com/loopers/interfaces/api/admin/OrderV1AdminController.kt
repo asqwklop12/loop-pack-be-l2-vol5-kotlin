@@ -43,7 +43,7 @@ class OrderV1AdminController(
         status = info.status,
         totalAmount = info.totalAmount,
         paidAmount = info.paidAmount,
-        items = info.items.map {
+        lines = info.lines.map {
             OrderV1Dto.OrderResponse.Item(
                 productId = it.productId,
                 quantity = it.quantity,

@@ -2,7 +2,7 @@ package com.loopers.interfaces.api.order
 
 class OrderV1Dto {
     data class CreateRequest(
-        val items: List<Line>,
+        val lines: List<Line>,
     ) {
         data class Line(
             val productId: Long,
@@ -15,7 +15,7 @@ class OrderV1Dto {
         val status: String,
         val totalAmount: Long,
         val paidAmount: Long?,
-        val items: List<Item>,
+        val lines: List<Item>,
     ) {
         data class Item(
             val productId: Long,

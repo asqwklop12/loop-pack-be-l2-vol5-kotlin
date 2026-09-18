@@ -18,14 +18,14 @@ class OrderService(
      * 포인트는 아직 차감하지 않는다. 결제는 확정에서 일어난다.
      */
     @Transactional
-    fun create(userId: Long, lines: List<OrderCommand.Line>): Order {
-        val items = lines.map { line ->
-            val product = productService.get(line.productId)
-            product.decreaseStock(line.quantity)
-            OrderItem(productId = product.id, quantity = line.quantity, unitPrice = product.price)
+    fun create(userId: Long, commands: List<OrderCommand.Line>): Order {
+        val lines = commands.map { command ->
+            val product = productService.get(command.productId)
+            product.decreaseStock(command.quantity)
+            OrderLine(productId = product.id, quantity = command.quantity, unitPrice = product.price)
         }
 
-        return orderRepository.save(Order(userId = userId, items = items))
+        return orderRepository.save(Order(userId = userId, lines = lines))
     }
 
     /**
@@ -80,7 +80,7 @@ class OrderService(
         if (confirmed) {
             order.paidAmount?.let { pointService.refund(userId, it) }
         }
-        order.items.forEach { item ->
+        order.lines.forEach { item ->
             productService.get(item.productId).increaseStock(item.quantity)
         }
 

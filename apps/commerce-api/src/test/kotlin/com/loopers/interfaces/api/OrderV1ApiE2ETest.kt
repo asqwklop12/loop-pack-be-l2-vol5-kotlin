@@ -303,10 +303,10 @@ class OrderV1ApiE2ETest @Autowired constructor(
             )
 
             assertAll(
-                { assertThat(response.body?.data?.items).hasSize(1) },
-                { assertThat(response.body?.data?.items?.first()?.quantity).isEqualTo(2) },
-                { assertThat(response.body?.data?.items?.first()?.unitPrice).isEqualTo(1_000L) },
-                { assertThat(response.body?.data?.items?.first()?.amount).isEqualTo(2_000L) },
+                { assertThat(response.body?.data?.lines).hasSize(1) },
+                { assertThat(response.body?.data?.lines?.first()?.quantity).isEqualTo(2) },
+                { assertThat(response.body?.data?.lines?.first()?.unitPrice).isEqualTo(1_000L) },
+                { assertThat(response.body?.data?.lines?.first()?.amount).isEqualTo(2_000L) },
             )
         }
 

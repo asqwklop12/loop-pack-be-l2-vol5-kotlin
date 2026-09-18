@@ -129,7 +129,7 @@ class AdminOrderV1ApiE2ETest @Autowired constructor(
                 { assertThat(response.statusCode.is2xxSuccessful).isTrue() },
                 { assertThat(response.body?.data?.status).isEqualTo("DRAFT") },
                 { assertThat(response.body?.data?.totalAmount).isEqualTo(2_000L) },
-                { assertThat(response.body?.data?.items).hasSize(1) },
+                { assertThat(response.body?.data?.lines).hasSize(1) },
             )
         }
 

@@ -23,7 +23,7 @@ class OrderV1Controller(
         @RequestHeader(value = "X-USER-ID") userId: Long,
         @RequestBody request: OrderV1Dto.CreateRequest,
     ): ApiResponse<OrderV1Dto.OrderResponse> {
-        val lines = request.items.map { OrderCommand.Line(productId = it.productId, quantity = it.quantity) }
+        val lines = request.lines.map { OrderCommand.Line(productId = it.productId, quantity = it.quantity) }
 
         return orderFacade.create(userId, lines)
             .let { toResponse(it) }
@@ -74,7 +74,7 @@ class OrderV1Controller(
         status = info.status,
         totalAmount = info.totalAmount,
         paidAmount = info.paidAmount,
-        items = info.items.map {
+        lines = info.lines.map {
             OrderV1Dto.OrderResponse.Item(
                 productId = it.productId,
                 quantity = it.quantity,

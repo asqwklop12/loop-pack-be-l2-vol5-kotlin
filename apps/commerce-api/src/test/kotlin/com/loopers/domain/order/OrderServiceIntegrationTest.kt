@@ -78,7 +78,7 @@ class OrderServiceIntegrationTest @Autowired constructor(
             assertAll(
                 { assertThat(order.status).isEqualTo(OrderStatus.DRAFT) },
                 { assertThat(order.totalAmount).isEqualTo(Money(2_000)) },
-                { assertThat(order.items.first().unitPrice).isEqualTo(Money(1_000)) },
+                { assertThat(order.lines.first().unitPrice).isEqualTo(Money(1_000)) },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(3)) },
             )
         }

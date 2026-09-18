@@ -7,7 +7,7 @@ data class OrderInfo(
     val status: String,
     val totalAmount: Long,
     val paidAmount: Long?,
-    val items: List<Item>,
+    val lines: List<Item>,
 ) {
     data class Item(
         val productId: Long,
@@ -23,7 +23,7 @@ data class OrderInfo(
                 status = order.status.name,
                 totalAmount = order.totalAmount.amount,
                 paidAmount = order.paidAmount?.amount,
-                items = order.items.map {
+                lines = order.lines.map {
                     Item(
                         productId = it.productId,
                         quantity = it.quantity,

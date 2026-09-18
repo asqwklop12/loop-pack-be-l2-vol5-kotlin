@@ -18,16 +18,16 @@ import jakarta.persistence.Table
 @Table(name = "orders")
 class Order(
     userId: Long,
-    items: List<OrderItem>,
+    lines: List<OrderLine>,
 ) : BaseEntity() {
     @Column(name = "user_id", nullable = false, updatable = false)
     var userId: Long = userId
         protected set
 
     @OneToMany(mappedBy = "order", cascade = [CascadeType.ALL], orphanRemoval = true)
-    private val _items: MutableList<OrderItem> = items.toMutableList()
+    private val _lines: MutableList<OrderLine> = lines.toMutableList()
 
-    val items: List<OrderItem> get() = _items.toList()
+    val lines: List<OrderLine> get() = _lines.toList()
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
@@ -36,7 +36,7 @@ class Order(
 
     @Embedded
     @AttributeOverride(name = "amount", column = Column(name = "total_amount", nullable = false))
-    var totalAmount: Money = items.fold(Money.ZERO) { acc, item -> acc.plus(item.amount) }
+    var totalAmount: Money = lines.fold(Money.ZERO) { acc, line -> acc.plus(line.amount) }
         protected set
 
     @Embedded
@@ -45,12 +45,12 @@ class Order(
         protected set
 
     init {
-        if (items.isEmpty()) throw CoreException(ErrorType.BAD_REQUEST, "주문 품목이 하나도 없습니다.")
-        if (items.distinctBy { it.productId }.size != items.size) {
+        if (lines.isEmpty()) throw CoreException(ErrorType.BAD_REQUEST, "주문 line이 하나도 없습니다.")
+        if (lines.distinctBy { it.productId }.size != lines.size) {
             throw CoreException(ErrorType.BAD_REQUEST, "같은 상품이 여러 품목으로 들어왔습니다.")
         }
 
-        _items.forEach { it.belongTo(this) }
+        _lines.forEach { it.belongTo(this) }
     }
 
     fun isOwnedBy(userId: Long): Boolean = this.userId == userId
