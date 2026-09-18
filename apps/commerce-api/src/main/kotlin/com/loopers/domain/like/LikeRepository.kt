@@ -5,6 +5,7 @@ interface LikeRepository {
     fun find(userId: Long, productId: Long): Like?
     fun delete(like: Like)
     fun countByProductId(productId: Long): Long
+    fun countByProductIds(productIds: List<Long>): Map<Long, Long>
     fun findAllByUserId(userId: Long): List<Like>
     fun deleteAllByProductId(productId: Long)
 }

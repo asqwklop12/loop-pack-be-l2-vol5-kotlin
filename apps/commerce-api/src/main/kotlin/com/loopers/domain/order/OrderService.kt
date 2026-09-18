@@ -14,8 +14,8 @@ class OrderService(
     private val pointService: PointService,
 ) {
     /**
-     * 주문서를 만든다. 재고·포인트를 차감하지 않는다.
-     * 단가는 이 시점의 상품 가격으로 고정한다.
+     * 주문서를 만들면서 재고를 잡아 둔다. 단가는 이 시점의 상품 가격으로 고정한다.
+     * 포인트는 아직 차감하지 않는다. 결제는 확정에서 일어난다.
      */
     @Transactional
     fun create(userId: Long, lines: List<OrderCommand.Line>): Order {

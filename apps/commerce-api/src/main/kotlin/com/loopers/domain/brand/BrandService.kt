@@ -22,15 +22,18 @@ class BrandService(
             ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $id] 브랜드를 찾을 수 없습니다.")
     }
 
-    /**
-     * 삭제되지 않은 상품이 하나라도 남아 있으면 거절한다. 재고가 0인 상품도 남아 있는 상품이다.
-     */
     @Transactional(readOnly = true)
     fun getAll(): List<Brand> = brandRepository.findAll()
+
+    @Transactional(readOnly = true)
+    fun getAllByIds(ids: List<Long>): List<Brand> = brandRepository.findAllByIds(ids)
 
     @Transactional
     fun update(id: Long, name: String): Brand = get(id).also { it.update(name) }
 
+    /**
+     * 삭제되지 않은 상품이 하나라도 남아 있으면 거절한다. 재고가 0인 상품도 남아 있는 상품이다.
+     */
     @Transactional
     fun delete(id: Long) {
         val brand = get(id)

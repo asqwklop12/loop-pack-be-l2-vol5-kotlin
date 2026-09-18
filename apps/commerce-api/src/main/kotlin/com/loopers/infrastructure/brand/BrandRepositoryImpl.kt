@@ -12,7 +12,8 @@ class BrandRepositoryImpl(
 
     override fun find(id: Long): Brand? = brandJpaRepository.findByIdAndDeletedAtIsNull(id)
 
-    override fun findByName(name: String): Brand? = brandJpaRepository.findByNameAndDeletedAtIsNull(name)
-
     override fun findAll(): List<Brand> = brandJpaRepository.findAllByDeletedAtIsNull()
+
+    override fun findAllByIds(ids: List<Long>): List<Brand> =
+        if (ids.isEmpty()) emptyList() else brandJpaRepository.findAllByIdInAndDeletedAtIsNull(ids)
 }

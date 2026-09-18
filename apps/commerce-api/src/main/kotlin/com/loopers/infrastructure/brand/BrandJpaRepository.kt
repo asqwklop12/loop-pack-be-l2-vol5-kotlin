@@ -5,6 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository
 
 interface BrandJpaRepository : JpaRepository<Brand, Long> {
     fun findByIdAndDeletedAtIsNull(id: Long): Brand?
-    fun findByNameAndDeletedAtIsNull(name: String): Brand?
     fun findAllByDeletedAtIsNull(): List<Brand>
+    fun findAllByIdInAndDeletedAtIsNull(ids: List<Long>): List<Brand>
 }
