@@ -1,0 +1,202 @@
+### 환경
+# 기본 포트는 8080 이지만, 8080 이 점유돼 있으면 아래 port 를 바꾼다.
+@host = http://localhost:8081
+@userId = 1
+@adminRole = ADMIN
+
+### ───────────────────────── 브랜드 (관리자) ─────────────────────────
+
+### 브랜드 생성 — 이름은 4~8자
+POST {{host}}/api-admin/v1/brands
+Content-Type: application/json
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+{
+  "name": "나이키코리아"
+}
+
+### 브랜드 목록 — 삭제된 것 제외, 없으면 빈 List
+GET {{host}}/api-admin/v1/brands
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+### 브랜드 상세
+GET {{host}}/api-admin/v1/brands/1
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+### 브랜드 수정
+PUT {{host}}/api-admin/v1/brands/1
+Content-Type: application/json
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+{
+  "name": "아디다스"
+}
+
+### 브랜드 삭제 — 상품이 있어도 삭제되며 그 상품은 판매중지가 된다
+DELETE {{host}}/api-admin/v1/brands/1
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+### 관리자가 아니면 403
+GET {{host}}/api-admin/v1/brands
+X-USER-ID: {{userId}}
+X-USER-ROLE: USER
+
+### 역할 헤더가 없으면 400
+GET {{host}}/api-admin/v1/brands
+X-USER-ID: {{userId}}
+
+### ───────────────────────── 상품 (관리자) ─────────────────────────
+
+### 상품 생성 — 이름 2~20자, 가격 1원 이상, 재고는 0으로 시작
+POST {{host}}/api-admin/v1/products
+Content-Type: application/json
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+{
+  "brandId": 1,
+  "name": "에어포스1",
+  "price": 129000
+}
+
+### 상품 목록 — 삭제된 것 제외
+GET {{host}}/api-admin/v1/products
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+### 상품 상세
+GET {{host}}/api-admin/v1/products/1
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+### 상품 수정 — 브랜드는 바뀌지 않는다
+PUT {{host}}/api-admin/v1/products/1
+Content-Type: application/json
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+{
+  "name": "에어포스2",
+  "price": 139000
+}
+
+### 재고 변경 — 최종 수량이 아니라 증가 값. 음수는 400, 0 은 통과
+PUT {{host}}/api-admin/v1/products/1/stock
+Content-Type: application/json
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+{
+  "amount": 10
+}
+
+### 상품 삭제 — 재고가 0이어야 하며 좋아요도 함께 지워진다
+DELETE {{host}}/api-admin/v1/products/1
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+### ───────────────────────── 주문 (관리자) ─────────────────────────
+
+### 전체 주문 목록 — 구매자를 가리지 않는다
+GET {{host}}/api-admin/v1/orders
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+### 주문 상세 — 소유자를 가리지 않는다
+GET {{host}}/api-admin/v1/orders/1
+X-USER-ID: {{userId}}
+X-USER-ROLE: {{adminRole}}
+
+### ───────────────────────── 브랜드·상품 (고객) ─────────────────────────
+
+### 브랜드 상세 — 없거나 삭제됐으면 404
+GET {{host}}/api/v1/brands/1
+
+### 상품 목록 — 판매중지·삭제된 상품은 빠진다
+GET {{host}}/api/v1/products
+
+### 상품 목록 — 브랜드 필터
+GET {{host}}/api/v1/products?brandId=1
+
+### 상품 목록 — 최신순 (기본값)
+GET {{host}}/api/v1/products?sort=latest&page=0&size=20
+
+### 상품 목록 — 가격 낮은 순. 동률은 id 내림차순
+GET {{host}}/api/v1/products?sort=price_asc
+
+### 상품 목록 — 좋아요 많은 순
+GET {{host}}/api/v1/products?sort=likes_desc
+
+### 상품 목록 — 잘못된 정렬 값이면 400
+GET {{host}}/api/v1/products?sort=asdf
+
+### 상품 상세 — 판매중지여도 열린다. status · sellable 로 구분
+GET {{host}}/api/v1/products/1
+
+### ───────────────────────── 좋아요 (고객) ─────────────────────────
+
+### 좋아요 등록 — 두 번 눌러도 성공이고 관계는 하나만 남는다
+POST {{host}}/api/v1/products/1/likes
+X-USER-ID: {{userId}}
+
+### 좋아요 해제 — 누른 적 없어도 성공. 삭제된 상품도 취소된다
+DELETE {{host}}/api/v1/products/1/likes
+X-USER-ID: {{userId}}
+
+### 내 좋아요 목록 — 삭제된 상품은 제외
+GET {{host}}/api/v1/users/{{userId}}/likes
+X-USER-ID: {{userId}}
+
+### 남의 목록을 보면 403
+GET {{host}}/api/v1/users/999/likes
+X-USER-ID: {{userId}}
+
+### ───────────────────────── 포인트 (고객) ─────────────────────────
+
+### 포인트 충전 — 0 이하는 400
+POST {{host}}/api/v1/points/charge
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "amount": 100000
+}
+
+### 잔액 조회 — 충전한 적 없으면 0원
+GET {{host}}/api/v1/points
+X-USER-ID: {{userId}}
+
+### ───────────────────────── 주문 (고객) ─────────────────────────
+
+### 주문 생성 — 재고를 여기서 차감한다. 같은 상품이 두 번 들어가면 400
+POST {{host}}/api/v1/orders
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "lines": [
+    { "productId": 1, "quantity": 2 },
+    { "productId": 2, "quantity": 1 }
+  ]
+}
+
+### 주문 확정 — 포인트 차감 + 금액 고정. 잔액 부족이면 400
+POST {{host}}/api/v1/orders/1/confirm
+X-USER-ID: {{userId}}
+
+### 주문 취소 — 재고 복원, 확정분은 포인트도 복원
+DELETE {{host}}/api/v1/orders/1
+X-USER-ID: {{userId}}
+
+### 내 주문 목록
+GET {{host}}/api/v1/orders
+X-USER-ID: {{userId}}
+
+### 내 주문 상세 — 남의 주문은 없는 주문과 같은 404
+GET {{host}}/api/v1/orders/1
+X-USER-ID: {{userId}}
