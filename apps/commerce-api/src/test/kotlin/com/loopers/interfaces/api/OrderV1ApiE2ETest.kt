@@ -102,6 +102,18 @@ class OrderV1ApiE2ETest @Autowired constructor(
             assertThat(createOrder(product.id).statusCode).isEqualTo(HttpStatus.NOT_FOUND)
         }
 
+        @DisplayName("판매중지된 상품이면, 409 CONFLICT 응답을 받고 주문이 만들어지지 않는다.")
+        @Test
+        fun returnsConflict_whenProductIsSuspended() {
+            val product = savedProduct(stock = 5)
+            productJpaRepository.save(product.apply { suspend() })
+
+            val response = createOrder(product.id)
+
+            assertThat(response.statusCode).isEqualTo(HttpStatus.CONFLICT)
+            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5))
+        }
+
         @DisplayName("수량이 0이면, 400 BAD_REQUEST 응답을 받는다.")
         @Test
         fun returnsBadRequest_whenQuantityIsZero() {

@@ -8,6 +8,8 @@ import jakarta.persistence.AttributeOverride
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.Table
 
 @Entity
@@ -35,9 +37,23 @@ class Product(
     var stock: Stock = stock
         protected set
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    var status: ProductStatus = ProductStatus.SELLING
+        protected set
+
     init {
         guardName(name)
         guardPrice(price)
+    }
+
+    fun isSellable(): Boolean = status == ProductStatus.SELLING
+
+    /**
+     * 판매를 중지한다. 이미 중지된 상품을 다시 중지해도 결과가 같다.
+     */
+    fun suspend() {
+        this.status = ProductStatus.SUSPENDED
     }
 
     fun update(name: String, price: Money) {

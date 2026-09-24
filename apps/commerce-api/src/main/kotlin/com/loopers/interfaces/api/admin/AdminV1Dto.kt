@@ -38,6 +38,7 @@ class AdminV1Dto {
             val brandId: Long,
             val brandName: String,
             val likeCount: Long,
+            val status: String,
         ) {
             companion object {
                 fun from(info: ProductInfo) = Response(
@@ -48,6 +49,7 @@ class AdminV1Dto {
                     brandId = info.brandId,
                     brandName = info.brandName,
                     likeCount = info.likeCount,
+                    status = info.status,
                 )
             }
         }

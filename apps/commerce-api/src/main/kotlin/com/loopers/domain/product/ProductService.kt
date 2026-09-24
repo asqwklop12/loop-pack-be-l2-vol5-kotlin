@@ -26,8 +26,28 @@ class ProductService(
         )
     }
 
+    /**
+     * 주문·좋아요처럼 판매 중이어야 하는 곳에서 쓴다. 상세 조회는 [get] 을 쓴다.
+     */
+    @Transactional(readOnly = true)
+    fun getSellable(id: Long): Product {
+        return get(id).also {
+            if (!it.isSellable()) {
+                throw CoreException(ErrorType.CONFLICT, "[id = $id] 판매가 중지된 상품입니다.")
+            }
+        }
+    }
+
     @Transactional(readOnly = true)
     fun getAll(): List<Product> = productRepository.findAll()
+
+    /**
+     * 브랜드가 내려갈 때 그 브랜드의 상품을 모두 판매중지로 바꾼다.
+     */
+    @Transactional
+    fun suspendAllByBrand(brandId: Long) {
+        productRepository.findAllActiveByBrandId(brandId).forEach { it.suspend() }
+    }
 
     @Transactional(readOnly = true)
     fun search(search: ProductSearch): List<Product> = productRepository.search(search)

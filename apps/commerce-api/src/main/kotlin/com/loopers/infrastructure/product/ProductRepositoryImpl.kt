@@ -17,6 +17,9 @@ class ProductRepositoryImpl(
     override fun countActiveByBrandId(brandId: Long): Long =
         productJpaRepository.countByBrandIdAndDeletedAtIsNull(brandId)
 
+    override fun findAllActiveByBrandId(brandId: Long): List<Product> =
+        productJpaRepository.findAllByBrandIdAndDeletedAtIsNull(brandId)
+
     override fun findAll(): List<Product> = productJpaRepository.findAllByDeletedAtIsNull()
 
     override fun findAllByIds(ids: List<Long>): List<Product> =

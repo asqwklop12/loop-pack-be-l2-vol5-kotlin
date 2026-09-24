@@ -246,15 +246,18 @@ class AdminV1ApiE2ETest @Autowired constructor(
             assertThat(brandJpaRepository.findById(brand.id).get().deletedAt).isNotNull()
         }
 
-        @DisplayName("삭제되지 않은 상품이 남아 있으면, 409 CONFLICT 응답을 받는다.")
+        @DisplayName("상품이 남아 있어도 삭제되며, 그 상품은 판매중지가 된다.")
         @Test
-        fun returnsConflict_whenActiveProductRemains() {
+        fun suspendsProducts_andDeletesBrand() {
             val brand = savedBrand()
-            savedProduct(brand.id)
+            val product = savedProduct(brand.id)
 
             val response = delete("/api-admin/v1/brands/${brand.id}")
 
-            assertThat(response.statusCode).isEqualTo(HttpStatus.CONFLICT)
+            assertThat(response.statusCode.is2xxSuccessful).isTrue()
+            assertThat(brandJpaRepository.findById(brand.id).get().deletedAt).isNotNull()
+            assertThat(productJpaRepository.findById(product.id).get().status)
+                .isEqualTo(com.loopers.domain.product.ProductStatus.SUSPENDED)
         }
 
         @DisplayName("없는 브랜드면, 404 NOT_FOUND 응답을 받는다.")

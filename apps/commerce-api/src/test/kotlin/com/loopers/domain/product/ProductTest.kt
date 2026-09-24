@@ -116,6 +116,39 @@ class ProductTest {
         }
     }
 
+    @DisplayName("판매를 중지할 때, ")
+    @Nested
+    inner class Suspend {
+        @DisplayName("생성 직후에는 판매 중이다.")
+        @Test
+        fun startsAsSelling() {
+            val product = product()
+
+            assertThat(product.status).isEqualTo(ProductStatus.SELLING)
+        }
+
+        @DisplayName("판매를 중지하면, SUSPENDED 가 된다.")
+        @Test
+        fun becomesSuspended() {
+            val product = product()
+
+            product.suspend()
+
+            assertThat(product.status).isEqualTo(ProductStatus.SUSPENDED)
+        }
+
+        @DisplayName("이미 중지된 상품을 다시 중지해도, SUSPENDED 로 유지된다.")
+        @Test
+        fun staysSuspended_whenAlreadySuspended() {
+            val product = product()
+            product.suspend()
+
+            product.suspend()
+
+            assertThat(product.status).isEqualTo(ProductStatus.SUSPENDED)
+        }
+    }
+
     @DisplayName("재고를 변경할 때, ")
     @Nested
     inner class ChangeStock {

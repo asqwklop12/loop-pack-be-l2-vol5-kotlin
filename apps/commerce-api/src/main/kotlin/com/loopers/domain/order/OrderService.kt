@@ -20,7 +20,7 @@ class OrderService(
     @Transactional
     fun create(userId: Long, commands: List<OrderCommand.Line>): Order {
         val lines = commands.map { command ->
-            val product = productService.get(command.productId)
+            val product = productService.getSellable(command.productId)
             product.decreaseStock(command.quantity)
             OrderLine(productId = product.id, quantity = command.quantity, unitPrice = product.price)
         }

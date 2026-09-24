@@ -15,8 +15,9 @@ import org.springframework.transaction.annotation.Transactional
 /**
  * 상품·브랜드·좋아요 수를 조합한다. 조회 결과의 구성은 application 의 책임이다.
  *
- * 트랜잭션 경계는 이 계층이다. 도메인 서비스마다 따로 열리면 목록 하나에 트랜잭션이
- * 상품 수만큼 늘어난다.
+ * 트랜잭션 경계는 이 계층이다. 유스케이스 하나가 트랜잭션 하나다. 경계가 없으면 목록 하나에
+ * 트랜잭션이 상품 수만큼 늘어난다. 도메인 서비스의 `@Transactional` 은 서비스를 직접 부르는
+ * 경로를 위한 것이고, 여기서 시작한 트랜잭션에 참여한다.
  */
 @Component
 class ProductFacade(
