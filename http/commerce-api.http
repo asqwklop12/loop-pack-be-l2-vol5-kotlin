@@ -37,7 +37,7 @@ X-USER-ROLE: {{adminRole}}
 }
 
 ### 브랜드 삭제 — 상품이 있어도 삭제되며 그 상품은 판매중지가 된다
-DELETE {{host}}/api-admin/v1/brands/1
+DELETE {{host}}/api-admin/v1/brands/2
 X-USER-ID: {{userId}}
 X-USER-ROLE: {{adminRole}}
 

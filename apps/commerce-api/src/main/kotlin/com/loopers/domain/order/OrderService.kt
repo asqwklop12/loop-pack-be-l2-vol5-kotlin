@@ -21,7 +21,7 @@ class OrderService(
     fun create(userId: Long, commands: List<OrderCommand.Line>): Order {
         val lines = commands.map { command ->
             val product = productService.getSellable(command.productId)
-            product.decreaseStock(command.quantity)
+            productService.decreaseStock(product, command.quantity)
             OrderLine(productId = product.id, quantity = command.quantity, unitPrice = product.price)
         }
 
@@ -80,8 +80,8 @@ class OrderService(
         if (confirmed) {
             order.paidAmount?.let { pointService.refund(userId, it) }
         }
-        order.lines.forEach { item ->
-            productService.get(item.productId).increaseStock(item.quantity)
+        order.lines.forEach { line ->
+            productService.restoreStock(line.productId, line.quantity)
         }
 
         return orderRepository.save(order)

@@ -46,7 +46,8 @@ class ProductService(
      */
     @Transactional
     fun suspendAllByBrand(brandId: Long) {
-        productRepository.findAllActiveByBrandId(brandId).forEach { it.suspend() }
+        productRepository.findAllActiveByBrandId(brandId)
+            .forEach { productRepository.save(it.also { product -> product.suspend() }) }
     }
 
     @Transactional(readOnly = true)
@@ -69,7 +70,9 @@ class ProductService(
 
     @Transactional
     fun update(id: Long, name: String, price: Money): Product {
-        return get(id).also { it.update(name = name, price = price) }
+        val product = get(id).also { it.update(name = name, price = price) }
+
+        return productRepository.save(product)
     }
 
     /**
@@ -82,7 +85,27 @@ class ProductService(
         val product = get(id)
         if (amount > 0) product.increaseStock(amount)
 
-        return product
+        return productRepository.save(product)
+    }
+
+    /**
+     * 주문이 재고를 잡을 때 쓴다. 규칙은 [Product.decreaseStock] 이 지킨다.
+     */
+    @Transactional
+    fun decreaseStock(product: Product, quantity: Int): Product {
+        product.decreaseStock(quantity)
+
+        return productRepository.save(product)
+    }
+
+    /**
+     * 주문 취소가 재고를 되돌릴 때 쓴다.
+     */
+    @Transactional
+    fun restoreStock(productId: Long, quantity: Int): Product {
+        val product = get(productId).also { it.increaseStock(quantity) }
+
+        return productRepository.save(product)
     }
 
     @Transactional
@@ -94,6 +117,7 @@ class ProductService(
 
         likeRepository.deleteAllByProductId(id)
         product.delete()
+        productRepository.save(product)
     }
 
     private fun requireExistingBrand(brandId: Long) {

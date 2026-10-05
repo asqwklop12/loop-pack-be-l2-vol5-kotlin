@@ -11,6 +11,7 @@ import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.FetchType
 import jakarta.persistence.OneToMany
 import jakarta.persistence.Table
 
@@ -24,7 +25,10 @@ class Order(
     var userId: Long = userId
         protected set
 
-    @OneToMany(mappedBy = "order", cascade = [CascadeType.ALL], orphanRemoval = true)
+    /**
+     * 한 애그리거트이므로 루트를 읽으면 라인도 함께 온다. 라인 없이 의미를 갖는 주문이 없다.
+     */
+    @OneToMany(mappedBy = "order", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     private val _lines: MutableList<OrderLine> = lines.toMutableList()
 
     val lines: List<OrderLine> get() = _lines.toList()

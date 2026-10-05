@@ -29,7 +29,11 @@ class BrandService(
     fun getAllByIds(ids: List<Long>): List<Brand> = brandRepository.findAllByIds(ids)
 
     @Transactional
-    fun update(id: Long, name: String): Brand = get(id).also { it.update(name) }
+    fun update(id: Long, name: String): Brand {
+        val brand = get(id).also { it.update(name) }
+
+        return brandRepository.save(brand)
+    }
 
     /**
      * 상품이 남아 있어도 삭제한다. 대신 그 브랜드의 상품을 모두 판매중지로 바꾼다.
@@ -41,5 +45,6 @@ class BrandService(
 
         productService.suspendAllByBrand(id)
         brand.delete()
+        brandRepository.save(brand)
     }
 }
