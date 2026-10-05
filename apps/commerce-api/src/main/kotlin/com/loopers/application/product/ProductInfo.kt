@@ -12,7 +12,6 @@ data class ProductInfo(
     val brandName: String,
     val likeCount: Long,
     val status: String,
-    val sellable: Boolean,
 ) {
     companion object {
         fun of(product: Product, brand: Brand, likeCount: Long): ProductInfo {
@@ -25,7 +24,6 @@ data class ProductInfo(
                 brandName = brand.name,
                 likeCount = likeCount,
                 status = product.status.name,
-                sellable = product.isSellable(),
             )
         }
     }

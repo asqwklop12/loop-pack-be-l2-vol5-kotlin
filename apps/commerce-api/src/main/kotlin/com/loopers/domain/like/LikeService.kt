@@ -14,7 +14,7 @@ class LikeService(
      */
     @Transactional
     fun like(userId: Long, productId: Long) {
-        productService.get(productId)
+        productService.getSellable(productId)
 
         likeRepository.find(userId, productId)
             ?: likeRepository.save(Like(userId = userId, productId = productId))

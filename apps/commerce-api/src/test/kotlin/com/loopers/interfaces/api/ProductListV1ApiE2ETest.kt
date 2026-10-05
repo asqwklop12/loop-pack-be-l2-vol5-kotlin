@@ -79,9 +79,9 @@ class ProductListV1ApiE2ETest @Autowired constructor(
             )
         }
 
-        @DisplayName("판매중지된 상품은 목록에서 제외되지만, 상세는 열린다.")
+        @DisplayName("판매중지된 상품은 목록에서도 상세에서도 빠진다.")
         @Test
-        fun excludesSuspendedFromList_butDetailStaysOpen() {
+        fun excludesSuspendedFromListAndDetail() {
             val brand = savedBrand("나이키코리아")
             savedProduct(brand.id, "판매중상품", 1_000)
             val suspended = savedProduct(brand.id, "판매중지상품", 2_000)
@@ -99,9 +99,7 @@ class ProductListV1ApiE2ETest @Autowired constructor(
             assertAll(
                 { assertThat(list.body?.data?.items?.map { it.name }).containsExactly("판매중상품") },
                 { assertThat(list.body?.data?.totalCount).isEqualTo(1L) },
-                { assertThat(detail.statusCode.is2xxSuccessful).isTrue() },
-                { assertThat(detail.body?.data?.status).isEqualTo("SUSPENDED") },
-                { assertThat(detail.body?.data?.sellable).isFalse() },
+                { assertThat(detail.statusCode).isEqualTo(HttpStatus.NOT_FOUND) },
             )
         }
 

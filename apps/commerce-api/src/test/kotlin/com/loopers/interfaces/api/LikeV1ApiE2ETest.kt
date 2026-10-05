@@ -96,6 +96,15 @@ class LikeV1ApiE2ETest @Autowired constructor(
             assertThat(like(-1L).statusCode).isEqualTo(HttpStatus.NOT_FOUND)
         }
 
+        @DisplayName("판매중지된 상품이면, 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenProductIsSuspended() {
+            val product = savedProduct()
+            productJpaRepository.save(product.apply { suspend() })
+
+            assertThat(like(product.id).statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        }
+
         @DisplayName("삭제된 상품이면, 404 NOT_FOUND 응답을 받는다.")
         @Test
         fun returnsNotFound_whenProductIsDeleted() {

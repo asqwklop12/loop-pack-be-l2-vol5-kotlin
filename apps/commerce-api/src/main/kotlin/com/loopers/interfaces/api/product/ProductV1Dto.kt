@@ -11,8 +11,6 @@ class ProductV1Dto {
         val brandId: Long,
         val brandName: String,
         val likeCount: Long,
-        val status: String,
-        val sellable: Boolean,
     ) {
         companion object {
             fun from(info: ProductInfo) = ProductResponse(
@@ -23,8 +21,6 @@ class ProductV1Dto {
                 brandId = info.brandId,
                 brandName = info.brandName,
                 likeCount = info.likeCount,
-                status = info.status,
-                sellable = info.sellable,
             )
         }
     }

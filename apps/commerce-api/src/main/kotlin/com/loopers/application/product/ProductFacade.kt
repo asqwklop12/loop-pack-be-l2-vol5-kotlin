@@ -21,7 +21,15 @@ class ProductFacade(
     private val brandService: BrandService,
     private val likeService: LikeService,
 ) {
-    fun getProduct(productId: Long): ProductInfo = combine(listOf(productService.get(productId))).first()
+    /**
+     * 고객 상세 조회. 판매중지 상품은 없는 것과 같은 응답을 준다.
+     */
+    fun getProduct(productId: Long): ProductInfo = combine(listOf(productService.getSellable(productId))).first()
+
+    /**
+     * 관리자 상세 조회. 판매중지 상품도 보인다.
+     */
+    fun getProductForAdmin(productId: Long): ProductInfo = combine(listOf(productService.get(productId))).first()
 
     fun getProducts(): List<ProductInfo> = combine(productService.getAll())
 

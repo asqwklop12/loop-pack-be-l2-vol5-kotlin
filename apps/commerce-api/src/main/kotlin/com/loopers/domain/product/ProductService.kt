@@ -27,15 +27,14 @@ class ProductService(
     }
 
     /**
-     * 주문·좋아요처럼 판매 중이어야 하는 곳에서 쓴다. 상세 조회는 [get] 을 쓴다.
+     * 고객이 쓰는 모든 경로의 기준이다. 판매중지 상품은 **없는 것과 같은 응답**을 준다.
+     * 중지됐다는 사실이 새어나가지 않아야 고객의 사용 대상에서 제외된 것이다.
+     * 관리자 조회는 [get] 을 쓴다.
      */
     @Transactional(readOnly = true)
     fun getSellable(id: Long): Product {
-        return get(id).also {
-            if (!it.isSellable()) {
-                throw CoreException(ErrorType.CONFLICT, "[id = $id] 판매가 중지된 상품입니다.")
-            }
-        }
+        return get(id).takeIf { it.isSellable() }
+            ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $id] 상품을 찾을 수 없습니다.")
     }
 
     @Transactional(readOnly = true)
