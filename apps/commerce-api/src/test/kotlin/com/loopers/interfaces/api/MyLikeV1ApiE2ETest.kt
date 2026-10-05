@@ -6,7 +6,7 @@ import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandJpaRepository
 import com.loopers.infrastructure.product.ProductJpaRepository
-import com.loopers.interfaces.api.product.ProductV1Dto
+import com.loopers.interfaces.api.user.UserLikeV1Dto
 import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -38,7 +38,7 @@ class MyLikeV1ApiE2ETest @Autowired constructor(
         HttpHeaders().apply { set("X-USER-ID", userId.toString()) }
 
     private val listType =
-        object : ParameterizedTypeReference<ApiResponse<List<ProductV1Dto.ProductResponse>>>() {}
+        object : ParameterizedTypeReference<ApiResponse<List<UserLikeV1Dto.LikedProductResponse>>>() {}
     private val voidType = object : ParameterizedTypeReference<ApiResponse<Any>>() {}
 
     private fun savedProduct(name: String = "에어포스1"): Product {
@@ -85,6 +85,23 @@ class MyLikeV1ApiE2ETest @Autowired constructor(
             val response = myLikes(userId)
 
             assertThat(response.body?.data?.map { it.name }).containsExactly("내가누른상품")
+        }
+
+        @DisplayName("판매중지된 상품은 목록에 남고, sellable 이 false 로 내려간다.")
+        @Test
+        fun keepsSuspendedProduct_withSellableFalse() {
+            val selling = savedProduct("판매중상품")
+            val suspended = savedProduct("판매중지상품")
+            like(selling.id)
+            like(suspended.id)
+            productJpaRepository.save(suspended.apply { suspend() })
+
+            val response = myLikes(userId)
+
+            assertThat(response.body?.data?.map { it.name })
+                .containsExactlyInAnyOrder("판매중상품", "판매중지상품")
+            assertThat(response.body?.data?.first { it.name == "판매중지상품" }?.sellable).isFalse()
+            assertThat(response.body?.data?.first { it.name == "판매중상품" }?.sellable).isTrue()
         }
 
         @DisplayName("삭제된 상품은 목록에서 제외된다.")

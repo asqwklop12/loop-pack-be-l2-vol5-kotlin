@@ -21,7 +21,7 @@
 | `GET /products/{productId}` | 상품 상세. 브랜드명 · 좋아요 수 포함 | 없거나 삭제됨 · 판매중지 `404` |
 | `POST /products/{productId}/likes` | 좋아요 등록. 멱등 | 없거나 삭제됨 · 판매중지 `404` |
 | `DELETE /products/{productId}/likes` | 좋아요 해제. 멱등 | 없음 |
-| `GET /users/{userId}/likes` | 내 좋아요 목록. 삭제된 상품 제외 | 남의 목록 `403` |
+| `GET /users/{userId}/likes` | 내 좋아요 목록. 삭제된 상품 제외, 판매중지는 `sellable: false` 로 남김 | 남의 목록 `403` |
 | `POST /points/charge` | 포인트 충전. 충전 후 잔액 반환 | 충전액 0 이하 `400` |
 | `GET /points` | 잔액 조회. 충전한 적 없으면 0원 | 없음 |
 | `POST /orders` | 주문 생성. `DRAFT` 저장 · 재고 차감 | 수량 0 · 중복 품목 `400`, 재고 부족 `400`, 없거나 판매중지된 상품 `404` |
