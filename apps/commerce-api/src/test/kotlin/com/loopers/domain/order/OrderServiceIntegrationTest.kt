@@ -3,6 +3,7 @@ package com.loopers.domain.order
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.point.PointService
 import com.loopers.domain.product.Product
+import com.loopers.domain.product.ProductService
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandJpaRepository
@@ -24,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest
 class OrderServiceIntegrationTest @Autowired constructor(
     private val orderService: OrderService,
     private val pointService: PointService,
+    private val productService: ProductService,
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
@@ -229,6 +231,79 @@ class OrderServiceIntegrationTest @Autowired constructor(
             val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.CONFLICT)
+        }
+    }
+
+    /**
+     * 주문은 **그때의 거래 기록**이다. 품목·수량·단가·총액·결제액은 주문 시점에 복사해 두고,
+     * 그 뒤 상품이 어떻게 되든 조회 결과가 흔들리면 안 된다.
+     *
+     * 지금은 조회 경로가 상품을 아예 읽지 않아 깨질 수 없다. 나중에 주문 조회에 상품명 같은 것을
+     * 붙이려고 `ProductService` 를 끌어오는 순간 재계산이 섞일 수 있어, 그때 실패하도록 둔다.
+     */
+    @DisplayName("주문한 뒤 상품이 바뀌어도, ")
+    @Nested
+    inner class ProtectsPlacedOrder {
+        @DisplayName("단가와 총액은 주문 시점 가격으로 남는다.")
+        @Test
+        fun keepsUnitPriceAndTotal_whenProductPriceChanges() {
+            val product = savedProduct(price = 1_000, stock = 5)
+            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+
+            productJpaRepository.save(product.apply { update(name = "상품", price = Money(9_000)) })
+
+            val found = orderService.get(userId, order.id)
+            assertAll(
+                // 가격이 실제로 바뀌었는지부터 못 박는다. 안 바뀌면 아래가 빈껍데기로 통과한다
+                { assertThat(productService.get(product.id).price).isEqualTo(Money(9_000)) },
+                { assertThat(found.lines.first().unitPrice).isEqualTo(Money(1_000)) },
+                { assertThat(found.lines.first().amount).isEqualTo(Money(2_000)) },
+                { assertThat(found.totalAmount).isEqualTo(Money(2_000)) },
+            )
+        }
+
+        @DisplayName("확정된 주문의 결제액도 그대로 남는다.")
+        @Test
+        fun keepsPaidAmount_whenProductPriceChanges() {
+            val product = savedProduct(price = 7_000, stock = 5)
+            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            pointService.charge(userId, Money(10_000))
+            orderService.confirm(userId, order.id)
+
+            productJpaRepository.save(product.apply { update(name = "상품", price = Money(1_000)) })
+
+            val found = orderService.get(userId, order.id)
+            assertAll(
+                { assertThat(productService.get(product.id).price).isEqualTo(Money(1_000)) },
+                { assertThat(found.status).isEqualTo(OrderStatus.CONFIRMED) },
+                { assertThat(found.paidAmount).isEqualTo(Money(7_000)) },
+                { assertThat(found.totalAmount).isEqualTo(Money(7_000)) },
+            )
+        }
+
+        /**
+         * 상품 삭제가 주문 행까지 끌고 가면 과거 거래가 사라진다. `OrderLine.productId` 는
+         * 연관도 외래키도 아닌 그냥 `Long` 이고, 삭제된 상품의 id 그대로 남아 있어야 한다.
+         */
+        @DisplayName("상품이 삭제되어도 주문과 품목은 그대로 조회된다.")
+        @Test
+        fun keepsOrderAndLines_whenProductIsDeleted() {
+            val product = savedProduct(price = 1_000, stock = 2)
+            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+
+            productService.delete(product.id)
+
+            val found = orderService.get(userId, order.id)
+            assertAll(
+                // 상품이 실제로 지워졌는지부터 못 박는다
+                { assertThrows<CoreException> { productService.get(product.id) } },
+                { assertThat(found.lines).hasSize(1) },
+                { assertThat(found.lines.first().productId).isEqualTo(product.id) },
+                { assertThat(found.lines.first().quantity).isEqualTo(2) },
+                { assertThat(found.lines.first().unitPrice).isEqualTo(Money(1_000)) },
+                { assertThat(found.totalAmount).isEqualTo(Money(2_000)) },
+                { assertThat(orderService.getAll(userId)).hasSize(1) },
+            )
         }
     }
 }
