@@ -8,6 +8,7 @@ import com.loopers.support.error.ErrorType
 import org.slf4j.LoggerFactory
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ExceptionHandler
@@ -28,6 +29,19 @@ class ApiControllerAdvice {
     fun handle(e: CoreException): ResponseEntity<ApiResponse<*>> {
         log.warn("CoreException : {}", e.customMessage ?: e.message, e)
         return failureResponse(errorType = e.errorType, errorMessage = e.customMessage)
+    }
+
+    /**
+     * 낙관락 충돌. 같은 행을 동시에 바꾸려다 나중 쪽이 떨어진 것이라, 고객에게는
+     * **이미 처리된 요청을 다시 보낸 것과 같은 상황**이다. 서버 오류가 아니므로 409 로 내린다.
+     */
+    @ExceptionHandler
+    fun handleConflict(e: ObjectOptimisticLockingFailureException): ResponseEntity<ApiResponse<*>> {
+        log.warn("낙관락 충돌 : {}", e.message, e)
+        return failureResponse(
+            errorType = ErrorType.CONFLICT,
+            errorMessage = "다른 요청이 먼저 처리되었습니다. 상태를 확인한 뒤 다시 시도해 주세요.",
+        )
     }
 
     @ExceptionHandler

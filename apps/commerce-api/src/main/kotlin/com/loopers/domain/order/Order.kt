@@ -14,6 +14,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.OneToMany
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 
 @Entity
 @Table(name = "orders")
@@ -46,6 +47,15 @@ class Order(
     @Embedded
     @AttributeOverride(name = "amount", column = Column(name = "paid_amount"))
     var paidAmount: Money? = null
+        protected set
+
+    /**
+     * 확정은 DRAFT 에서 한 번만 일어나야 한다. 확정이 겹치면 둘 다 같은 값을 읽고 통과하므로,
+     * **나중에 저장하는 쪽을 이 값으로 떨어뜨린다.**
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    var version: Long = 0
         protected set
 
     init {

@@ -23,6 +23,10 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OrderV1ApiE2ETest @Autowired constructor(
@@ -208,6 +212,41 @@ class OrderV1ApiE2ETest @Autowired constructor(
             assertAll(
                 { assertThat(response.statusCode).isEqualTo(HttpStatus.NOT_FOUND) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
+            )
+        }
+
+        /**
+         * 확정이 겹치면 나중 쪽이 낙관락에서 떨어진다. 그 예외가 그대로 올라가면 500 이 나간다.
+         * 고객이 보기에는 "이미 확정된 주문" 과 같은 상황이므로 같은 409 여야 한다.
+         */
+        @DisplayName("동시에 두 번 확정하면, 하나는 409 CONFLICT 응답을 받는다.")
+        @Test
+        fun returnsConflict_whenConfirmedAtTheSameTime() {
+            val product = savedProduct(price = 1_000, stock = 10)
+            val orderId = createOrder(product.id, quantity = 2).body!!.data!!.id
+            pointService.charge(userId, Money(10_000))
+
+            val start = CountDownLatch(1)
+            val done = CountDownLatch(2)
+            val statuses = Collections.synchronizedList(mutableListOf<HttpStatus>())
+            val pool = Executors.newFixedThreadPool(2)
+            repeat(2) {
+                pool.submit {
+                    start.await()
+                    try {
+                        statuses.add(confirm(orderId).statusCode as HttpStatus)
+                    } finally {
+                        done.countDown()
+                    }
+                }
+            }
+            start.countDown()
+            done.await(10, TimeUnit.SECONDS)
+            pool.shutdown()
+
+            assertAll(
+                { assertThat(statuses).filteredOn { it.is2xxSuccessful }.hasSize(1) },
+                { assertThat(statuses).contains(HttpStatus.CONFLICT) },
             )
         }
 
