@@ -73,12 +73,19 @@ class Order(
     }
 
     /**
-     * 확정은 금액이 고정되는 사건이다. 결제액은 합계와 같아야 한다.
+     * 확정할 수 있는 상태인지만 본다. 재고와 결제를 건드리기 전에 먼저 거르려고 따로 둔다.
      */
-    fun confirm(paidAmount: Money) {
+    fun requireDraft() {
         if (status != OrderStatus.DRAFT) {
             throw CoreException(ErrorType.CONFLICT, "확정할 수 없는 주문 상태입니다. [상태 = $status]")
         }
+    }
+
+    /**
+     * 확정은 금액이 고정되는 사건이다. 결제액은 합계와 같아야 한다.
+     */
+    fun confirm(paidAmount: Money) {
+        requireDraft()
         if (paidAmount != totalAmount) {
             throw CoreException(ErrorType.BAD_REQUEST, "결제액이 주문 합계와 다릅니다. [합계 = $totalAmount, 결제액 = $paidAmount]")
         }

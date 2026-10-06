@@ -14,14 +14,14 @@ class OrderService(
     private val pointService: PointService,
 ) {
     /**
-     * 주문서를 만들면서 재고를 잡아 둔다. 단가는 이 시점의 상품 가격으로 고정한다.
-     * 포인트는 아직 차감하지 않는다. 결제는 확정에서 일어난다.
+     * 주문서만 만든다. 재고도 포인트도 건드리지 않는다. 둘 다 확정에서 일어난다.
+     * 단가는 이 시점의 상품 가격으로 고정한다. 나중에는 알아낼 수 없는 값이다.
      */
     @Transactional
     fun create(userId: Long, commands: List<OrderCommand.Line>): Order {
         val lines = commands.map { command ->
             val product = productService.getSellable(command.productId)
-            productService.decreaseStock(product, command.quantity)
+
             OrderLine(productId = product.id, quantity = command.quantity, unitPrice = product.price)
         }
 
@@ -56,11 +56,18 @@ class OrderService(
     /**
      * 되돌리기 싼 것부터 차감한다. 재고가 먼저고 결제가 마지막이다.
      * 어느 단계에서 실패해도 같은 트랜잭션 안이라 앞 단계가 되돌아간다.
+     *
+     * 상품은 **여기서 다시 확인한다.** 주문서를 만든 뒤 상품이 내려갈 수 있다.
      */
     @Transactional
     fun confirm(userId: Long, orderId: Long): Order {
         val order = get(userId, orderId)
+        order.requireDraft()
 
+        order.lines.forEach { line ->
+            val product = productService.getSellable(line.productId)
+            productService.decreaseStock(product, line.quantity)
+        }
         pointService.pay(userId, order.totalAmount)
         order.confirm(order.totalAmount)
 
@@ -68,8 +75,8 @@ class OrderService(
     }
 
     /**
-     * 재고는 주문 생성에서 잡았으므로 어느 상태에서 취소하든 되돌린다.
-     * 포인트는 확정에서만 차감하므로 확정된 주문만 복원한다.
+     * 재고와 포인트는 확정에서만 차감하므로 확정된 주문만 복원한다.
+     * 확정 전 취소는 잡은 것이 없어 상태만 바꾼다.
      */
     @Transactional
     fun cancel(userId: Long, orderId: Long): Order {
@@ -79,9 +86,9 @@ class OrderService(
 
         if (confirmed) {
             order.paidAmount?.let { pointService.refund(userId, it) }
-        }
-        order.lines.forEach { line ->
-            productService.restoreStock(line.productId, line.quantity)
+            order.lines.forEach { line ->
+                productService.restoreStock(line.productId, line.quantity)
+            }
         }
 
         return orderRepository.save(order)
