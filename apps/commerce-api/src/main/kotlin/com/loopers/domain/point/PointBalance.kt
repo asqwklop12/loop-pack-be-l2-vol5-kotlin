@@ -9,7 +9,6 @@ import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.Table
-import jakarta.persistence.Version
 
 @Entity
 @Table(name = "point_balance")
@@ -24,15 +23,6 @@ class PointBalance(
     @Embedded
     @AttributeOverride(name = "amount", column = Column(name = "balance", nullable = false))
     var balance: Money = balance
-        protected set
-
-    /**
-     * 한 사용자가 여러 주문을 동시에 결제하면 둘 다 같은 잔액을 읽는다. 그대로 두면
-     * **잔액보다 많이 결제된다.** 읽은 값이 아직 유효한지를 저장할 때 확인한다.
-     */
-    @Version
-    @Column(name = "version", nullable = false)
-    var version: Long = 0
         protected set
 
     /**

@@ -8,9 +8,13 @@ import org.springframework.transaction.annotation.Transactional
 class PointService(
     private val pointRepository: PointRepository,
 ) {
+    /**
+     * 충전과 결제는 같은 잔액 행을 다툰다. 둘 다 성립하는 요청이므로 거절하지 않고
+     * 줄을 세운다. 조회는 [getBalance] 처럼 잠그지 않는다.
+     */
     @Transactional
     fun charge(userId: Long, amount: Money): Money {
-        val point = pointRepository.findByUserId(userId)
+        val point = pointRepository.findByUserIdForUpdate(userId)
             ?: PointBalance(userId = userId)
         point.charge(amount)
 
@@ -19,7 +23,7 @@ class PointService(
 
     @Transactional
     fun pay(userId: Long, amount: Money): Money {
-        val point = pointRepository.findByUserId(userId)
+        val point = pointRepository.findByUserIdForUpdate(userId)
             ?: PointBalance(userId = userId)
         point.pay(amount)
 

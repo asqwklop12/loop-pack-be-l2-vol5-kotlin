@@ -204,4 +204,37 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
             assertThat(succeeded).isEqualTo(1)
         }
     }
+
+    @DisplayName("충전과 주문 확정이 동시에 일어나면, ")
+    @Nested
+    inner class ChargeAndPay {
+        /**
+         * 앞의 경우들과 반대다. 저 둘은 **막아야 맞는** 것이고 이건 **둘 다 되어야 맞는** 것이다.
+         * 10,000 + 2,000 - 7,000 = 5,000 으로 잔액이 성립한다.
+         *
+         * 락이 과하게 막는지를 보는 자리다. 같은 행을 건드렸다는 이유만으로 떨어뜨리면
+         * 정상 동작을 막게 된다.
+         */
+        @DisplayName("둘 다 성공하고, 잔액은 충전과 결제가 모두 반영된 값이 된다.")
+        @Test
+        fun appliesBoth() {
+            val userId = 1L
+            val product = savedProduct(price = 7_000, stock = 10)
+            val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
+            pointService.charge(userId, Money(10_000))
+
+            val succeeded = runTogether(2) { index ->
+                if (index == 0) {
+                    pointService.charge(userId, Money(2_000))
+                } else {
+                    orderService.confirm(userId, order.id)
+                }
+            }
+
+            assertAll(
+                { assertThat(succeeded).isEqualTo(2) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(5_000)) },
+            )
+        }
+    }
 }
