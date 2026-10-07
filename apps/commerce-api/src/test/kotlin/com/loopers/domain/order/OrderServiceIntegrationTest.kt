@@ -374,4 +374,91 @@ class OrderServiceIntegrationTest @Autowired constructor(
             )
         }
     }
+
+    /**
+     * 품목이 하나면 되돌릴 앞 단계가 없다. 둘 이상일 때 **앞 품목이 함께 되돌아가는지**가 걸린다.
+     * 품목 루프가 배치로 빠지거나 품목마다 커밋하게 되면 조용히 반쪽 차감이 된다.
+     */
+    @DisplayName("여러 품목을 확정할 때, ")
+    @Nested
+    inner class ConfirmManyLines {
+        @DisplayName("정상이면, 모든 상품의 재고가 줄고 합계만큼 결제된다.")
+        @Test
+        fun appliesEveryLine() {
+            val first = savedProduct(price = 1_000, stock = 5)
+            val second = savedProduct(price = 2_000, stock = 5)
+            val order = orderService.create(
+                userId,
+                listOf(
+                    OrderCommand.Line(productId = first.id, quantity = 2),
+                    OrderCommand.Line(productId = second.id, quantity = 1),
+                ),
+            )
+            pointService.charge(userId, Money(10_000))
+
+            val confirmed = orderService.confirm(userId, order.id)
+
+            assertAll(
+                { assertThat(confirmed.status).isEqualTo(OrderStatus.CONFIRMED) },
+                { assertThat(confirmed.paidAmount).isEqualTo(Money(4_000)) },
+                { assertThat(productJpaRepository.findById(first.id).get().stock).isEqualTo(Stock(3)) },
+                { assertThat(productJpaRepository.findById(second.id).get().stock).isEqualTo(Stock(4)) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(6_000)) },
+            )
+        }
+
+        /**
+         * 재고를 **둘 다 줄인 뒤** 결제 단계에서 터진다. 품목 중 하나를 재고 부족으로 만들면
+         * 그 품목이 먼저 처리될 수 있어, 앞 품목이 쓰이기도 전에 끝나 버린다.
+         */
+        @DisplayName("재고를 모두 줄인 뒤 잔액이 부족하면, 모든 재고가 되돌아온다.")
+        @Test
+        fun restoresEveryLine_whenBalanceIsNotEnough() {
+            val first = savedProduct(price = 5_000, stock = 5)
+            val second = savedProduct(price = 5_000, stock = 5)
+            val order = orderService.create(
+                userId,
+                listOf(
+                    OrderCommand.Line(productId = first.id, quantity = 1),
+                    OrderCommand.Line(productId = second.id, quantity = 1),
+                ),
+            )
+            pointService.charge(userId, Money(1_000))
+
+            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+
+            assertAll(
+                { assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
+                { assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(productJpaRepository.findById(first.id).get().stock).isEqualTo(Stock(5)) },
+                { assertThat(productJpaRepository.findById(second.id).get().stock).isEqualTo(Stock(5)) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(1_000)) },
+            )
+        }
+
+        @DisplayName("한 품목의 재고가 부족하면, 다른 품목의 재고도 그대로 남는다.")
+        @Test
+        fun restoresEveryLine_whenOneLineIsOutOfStock() {
+            val enough = savedProduct(price = 1_000, stock = 5)
+            val scarce = savedProduct(price = 1_000, stock = 1)
+            val order = orderService.create(
+                userId,
+                listOf(
+                    OrderCommand.Line(productId = enough.id, quantity = 2),
+                    OrderCommand.Line(productId = scarce.id, quantity = 2),
+                ),
+            )
+            pointService.charge(userId, Money(10_000))
+
+            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+
+            assertAll(
+                { assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
+                { assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(productJpaRepository.findById(enough.id).get().stock).isEqualTo(Stock(5)) },
+                { assertThat(productJpaRepository.findById(scarce.id).get().stock).isEqualTo(Stock(1)) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
+            )
+        }
+    }
 }
