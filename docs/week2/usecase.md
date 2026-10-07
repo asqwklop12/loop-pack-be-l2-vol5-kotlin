@@ -311,7 +311,7 @@ flowchart LR
     A --> B[상품 조회]
     B --> C[상품 수정]
 
-    B --> B1[존재하지 않는 상품인 경우]
+    B --> B1["존재하지 않는 상품인 경우<br/>판매중지인 상품인 경우"]
     B1 -.->|Exception| 관리자
 
     classDef fail stroke:#e06c75,color:#e06c75
@@ -329,7 +329,7 @@ flowchart LR
     B --> C[재고 증가 값 입력]
     C --> D[상품 재고 수량 변경]
 
-    B --> B1[존재하지 않는 상품인 경우]
+    B --> B1["존재하지 않는 상품인 경우<br/>판매중지인 상품인 경우"]
     C --> C1[음수인 경우]
     B1 -.->|Exception| 관리자
     C1 -.->|Exception| 관리자

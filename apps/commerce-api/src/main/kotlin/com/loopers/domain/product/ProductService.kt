@@ -67,21 +67,26 @@ class ProductService(
             ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $id] 상품을 찾을 수 없습니다.")
     }
 
+    /**
+     * 판매중지 상품은 바꿀 수 없다. 고객에게 안 보이는 채로 상품이 움직이면 안 되고,
+     * 되살릴 길도 없으므로 없는 상품과 같이 취급한다.
+     */
     @Transactional
     fun update(id: Long, name: String, price: Money): Product {
-        val product = get(id).also { it.update(name = name, price = price) }
+        val product = getSellable(id).also { it.update(name = name, price = price) }
 
         return productRepository.save(product)
     }
 
     /**
      * 최종 수량을 설정하지 않고 증가 값을 더한다. 음수만 거절하므로 0 은 재고를 바꾸지 않는다.
+     * 판매중지 상품은 [update] 와 같은 이유로 거절한다.
      */
     @Transactional
     fun changeStock(id: Long, amount: Int): Product {
         if (amount < 0) throw CoreException(ErrorType.BAD_REQUEST, "재고 증가 값은 음수일 수 없습니다.")
 
-        val product = get(id)
+        val product = getSellable(id)
         if (amount > 0) product.increaseStock(amount)
 
         return productRepository.save(product)
