@@ -5,6 +5,7 @@ import com.loopers.domain.point.PointService
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
+import com.loopers.support.error.CoreException
 import com.loopers.infrastructure.brand.BrandJpaRepository
 import com.loopers.infrastructure.product.ProductJpaRepository
 import com.loopers.utils.DatabaseCleanUp
@@ -54,29 +55,44 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
      * 모든 스레드를 한 신호에 함께 출발시킨다. 순차 실행이 되면 경쟁이 일어나지 않아
      * 테스트가 통과해 버린다.
      */
-    private fun runTogether(count: Int, task: (Int) -> Unit): Int {
+    private fun runTogether(count: Int, task: (Int) -> Unit): Outcome {
         val start = CountDownLatch(1)
         val done = CountDownLatch(count)
-        val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+        val rejected = Collections.synchronizedList(mutableListOf<CoreException>())
+        val failed = Collections.synchronizedList(mutableListOf<Throwable>())
         val pool = Executors.newFixedThreadPool(count)
 
         repeat(count) { index ->
             pool.submit {
-                start.await()
                 try {
+                    start.await()
                     task(index)
+                } catch (e: CoreException) {
+                    rejected.add(e)
                 } catch (e: Throwable) {
-                    failures.add(e)
+                    failed.add(e)
                 } finally {
                     done.countDown()
                 }
             }
         }
         start.countDown()
-        done.await(10, TimeUnit.SECONDS)
-        pool.shutdown()
 
-        return count - failures.size
+        val finished = done.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        pool.shutdown()
+        val terminated = pool.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        // 멈춘 작업은 아무 갈래에도 안 들어가 성공처럼 보인다. 집계 전에 거른다
+        assertAll(
+            { assertThat(finished).`as`("모든 작업이 제한 시간 안에 끝난다").isTrue() },
+            { assertThat(terminated).`as`("스레드가 모두 정리된다").isTrue() },
+        )
+
+        return Outcome(
+            succeeded = count - rejected.size - failed.size,
+            rejected = rejected.size,
+            failed = failed.size,
+        )
     }
 
     @DisplayName("같은 주문을 동시에 두 번 확정하면, ")
@@ -93,10 +109,11 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
             val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 2)))
             pointService.charge(userId, Money(10_000))
 
-            val succeeded = runTogether(2) { orderService.confirm(userId, order.id) }
+            val outcome = runTogether(2) { orderService.confirm(userId, order.id) }
 
             assertAll(
-                { assertThat(succeeded).isEqualTo(1) },
+                { assertThat(outcome.succeeded).isEqualTo(1) },
+                { assertThat(outcome.blocked).`as`("진 쪽은 한 건").isEqualTo(1) },
                 { assertThat(stockOf(product)).isEqualTo(Stock(8)) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(8_000)) },
             )
@@ -115,13 +132,14 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
                 userId to orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             }
 
-            val succeeded = runTogether(2) { index ->
+            val outcome = runTogether(2) { index ->
                 val (userId, order) = orders[index]
                 orderService.confirm(userId, order.id)
             }
 
             assertAll(
-                { assertThat(succeeded).isEqualTo(1) },
+                { assertThat(outcome.succeeded).isEqualTo(1) },
+                { assertThat(outcome.blocked).`as`("진 쪽은 한 건").isEqualTo(1) },
                 { assertThat(stockOf(product)).isEqualTo(Stock(0)) },
             )
         }
@@ -143,10 +161,13 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
                 orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             }
 
-            val succeeded = runTogether(2) { index -> orderService.confirm(userId, orders[index].id) }
+            val outcome = runTogether(2) { index -> orderService.confirm(userId, orders[index].id) }
 
             assertAll(
-                { assertThat(succeeded).isEqualTo(1) },
+                { assertThat(outcome.succeeded).isEqualTo(1) },
+                // 비관락이라 기다린 쪽이 갱신된 잔액을 읽는다. 충돌이 아니라 잔액 부족으로 막힌다
+                { assertThat(outcome.rejected).`as`("업무 거절 — 잔액 부족").isEqualTo(1) },
+                { assertThat(outcome.failed).`as`("기술 오류").isZero() },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(3_000)) },
             )
         }
@@ -168,10 +189,11 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
             pointService.charge(userId, Money(10_000))
             orderService.confirm(userId, order.id)
 
-            val succeeded = runTogether(2) { orderService.cancel(userId, order.id) }
+            val outcome = runTogether(2) { orderService.cancel(userId, order.id) }
 
             assertAll(
-                { assertThat(succeeded).isEqualTo(1) },
+                { assertThat(outcome.succeeded).isEqualTo(1) },
+                { assertThat(outcome.blocked).`as`("진 쪽은 한 건").isEqualTo(1) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
                 { assertThat(stockOf(product)).isEqualTo(Stock(5)) },
             )
@@ -193,7 +215,7 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
             val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
 
-            val succeeded = runTogether(2) { index ->
+            val outcome = runTogether(2) { index ->
                 if (index == 0) {
                     orderService.confirm(userId, order.id)
                 } else {
@@ -201,7 +223,10 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
                 }
             }
 
-            assertThat(succeeded).isEqualTo(1)
+            assertAll(
+                { assertThat(outcome.succeeded).isEqualTo(1) },
+                { assertThat(outcome.blocked).`as`("진 쪽은 한 건").isEqualTo(1) },
+            )
         }
     }
 
@@ -223,7 +248,7 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
             val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
 
-            val succeeded = runTogether(2) { index ->
+            val outcome = runTogether(2) { index ->
                 if (index == 0) {
                     pointService.charge(userId, Money(2_000))
                 } else {
@@ -232,9 +257,33 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
             }
 
             assertAll(
-                { assertThat(succeeded).isEqualTo(2) },
+                { assertThat(outcome.succeeded).isEqualTo(2) },
+                { assertThat(outcome.failed).`as`("기술 오류 0").isZero() },
+                { assertThat(outcome.rejected).`as`("업무 거절 0").isZero() },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(5_000)) },
             )
         }
+    }
+
+    /**
+     * 실패를 한 덩어리로 세면 진 쪽이 무슨 답을 받았는지 모른다. 성격이 다른 둘이 섞인다.
+     *
+     * - [rejected] 업무 거절. 재고 부족 · 잔액 부족 · 이미 확정됨. **규칙대로 막힌 정상 동작**
+     * - [failed] 기술 오류. 낙관락 충돌 · 타임아웃 · SQL 오류. **경쟁 때문에 못 한 것**
+     *
+     * 낙관락을 건 자리는 진 쪽이 기술 오류를 받고, 비관락을 건 자리는 기다렸다가 업무 거절을
+     * 받는다. 세 갈래로 세야 그 차이가 드러난다.
+     */
+    private data class Outcome(
+        val succeeded: Int,
+        val rejected: Int,
+        val failed: Int,
+    ) {
+        /** 어느 갈래로 막혔는지가 경쟁 시점에 따라 갈리는 경우에 쓴다. */
+        val blocked: Int get() = rejected + failed
+    }
+
+    companion object {
+        private const val TIMEOUT_SECONDS = 10L
     }
 }
