@@ -11,6 +11,7 @@ import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 
 @Entity
 @Table(name = "product")
@@ -40,6 +41,15 @@ class Product(
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     var status: ProductStatus = ProductStatus.SELLING
+        protected set
+
+    /**
+     * 재고를 동시에 줄이면 둘 다 같은 값을 읽고 같은 값을 써서 **하나가 사라진다.**
+     * 읽은 값이 아직 유효한지를 저장할 때 확인한다.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    var version: Long = 0
         protected set
 
     init {

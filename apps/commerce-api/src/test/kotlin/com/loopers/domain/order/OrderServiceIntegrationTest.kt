@@ -337,7 +337,9 @@ class OrderServiceIntegrationTest @Autowired constructor(
             pointService.charge(userId, Money(10_000))
             orderService.confirm(userId, order.id)
 
-            productJpaRepository.save(product.apply { update(name = "상품", price = Money(1_000)) })
+            // 확정이 재고를 줄여 버전이 올라갔다. 들고 있던 인스턴스로 저장하면 낙관락에 걸린다
+            val reloaded = productJpaRepository.findById(product.id).get()
+            productJpaRepository.save(reloaded.apply { update(name = "상품", price = Money(1_000)) })
 
             val found = orderService.get(userId, order.id)
             assertAll(
