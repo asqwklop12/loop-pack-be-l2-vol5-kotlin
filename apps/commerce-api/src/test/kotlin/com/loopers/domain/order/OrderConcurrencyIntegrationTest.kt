@@ -22,7 +22,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * 확정은 재고와 포인트를 함께 움직인다. 같은 행을 동시에 건드리면 읽기와 쓰기 사이에
+ * 확정과 취소는 재고와 포인트를 함께 움직인다. 같은 행을 동시에 건드리면 읽기와 쓰기 사이에
  * 다른 트랜잭션이 끼어들어 **장부가 어긋난다.**
  *
  * 세 자리를 각각 드러낸다. 막는 자리가 달라서 한 번에 묶이지 않는다.
@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit
  * - 한 사용자가 여러 주문을 확정 — 포인트 행
  */
 @SpringBootTest
-class OrderConfirmConcurrencyIntegrationTest @Autowired constructor(
+class OrderConcurrencyIntegrationTest @Autowired constructor(
     private val orderService: OrderService,
     private val pointService: PointService,
     private val productJpaRepository: ProductJpaRepository,
@@ -149,6 +149,59 @@ class OrderConfirmConcurrencyIntegrationTest @Autowired constructor(
                 { assertThat(succeeded).isEqualTo(1) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(3_000)) },
             )
+        }
+    }
+
+    @DisplayName("확정된 주문을 동시에 두 번 취소하면, ")
+    @Nested
+    inner class SameOrderCancel {
+        /**
+         * 취소 따닥은 확정 따닥보다 나쁘다. 확정이 두 번이면 돈이 두 번 나가지만,
+         * 취소가 두 번이면 **없던 돈이 생긴다.**
+         */
+        @DisplayName("한 번만 성공하고, 환불과 재고 복원도 한 번만 일어난다.")
+        @Test
+        fun cancelsOnce() {
+            val userId = 1L
+            val product = savedProduct(price = 7_000, stock = 5)
+            val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
+            pointService.charge(userId, Money(10_000))
+            orderService.confirm(userId, order.id)
+
+            val succeeded = runTogether(2) { orderService.cancel(userId, order.id) }
+
+            assertAll(
+                { assertThat(succeeded).isEqualTo(1) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
+                { assertThat(stockOf(product)).isEqualTo(Stock(5)) },
+            )
+        }
+    }
+
+    @DisplayName("한 주문을 확정과 취소가 동시에 건드리면, ")
+    @Nested
+    inner class ConfirmAndCancel {
+        /**
+         * 확정하면서 동시에 취소되는 주문은 없어야 한다. 둘 다 DRAFT 를 읽으므로
+         * 상태 검사만으로는 갈리지 않는다.
+         */
+        @DisplayName("둘 중 하나만 성공한다.")
+        @Test
+        fun onlyOneWins() {
+            val userId = 1L
+            val product = savedProduct(price = 7_000, stock = 5)
+            val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
+            pointService.charge(userId, Money(10_000))
+
+            val succeeded = runTogether(2) { index ->
+                if (index == 0) {
+                    orderService.confirm(userId, order.id)
+                } else {
+                    orderService.cancel(userId, order.id)
+                }
+            }
+
+            assertThat(succeeded).isEqualTo(1)
         }
     }
 }
