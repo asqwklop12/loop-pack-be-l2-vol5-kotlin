@@ -1,5 +1,6 @@
 package com.loopers.domain.order
 
+import com.loopers.application.order.OrderFacade
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.point.PointService
 import com.loopers.domain.product.Product
@@ -33,7 +34,7 @@ import java.util.concurrent.TimeUnit
  */
 @SpringBootTest
 class OrderConcurrencyIntegrationTest @Autowired constructor(
-    private val orderService: OrderService,
+    private val orderFacade: OrderFacade,
     private val pointService: PointService,
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
@@ -106,10 +107,10 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
         fun confirmsOnce() {
             val userId = 1L
             val product = savedProduct(price = 1_000, stock = 10)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 2)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, quantity = 2)))
             pointService.charge(userId, Money(10_000))
 
-            val outcome = runTogether(2) { orderService.confirm(userId, order.id) }
+            val outcome = runTogether(2) { orderFacade.confirm(userId, order.id) }
 
             assertAll(
                 { assertThat(outcome.succeeded).isEqualTo(1) },
@@ -129,12 +130,12 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
             val product = savedProduct(price = 1_000, stock = 1)
             val orders = (1L..2L).map { userId ->
                 pointService.charge(userId, Money(10_000))
-                userId to orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
+                userId to orderFacade.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             }
 
             val outcome = runTogether(2) { index ->
                 val (userId, order) = orders[index]
-                orderService.confirm(userId, order.id)
+                orderFacade.confirm(userId, order.id)
             }
 
             assertAll(
@@ -158,10 +159,10 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
             pointService.charge(userId, Money(10_000))
             val orders = (1..2).map {
                 val product = savedProduct(price = 7_000, stock = 5)
-                orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
+                orderFacade.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             }
 
-            val outcome = runTogether(2) { index -> orderService.confirm(userId, orders[index].id) }
+            val outcome = runTogether(2) { index -> orderFacade.confirm(userId, orders[index].id) }
 
             assertAll(
                 { assertThat(outcome.succeeded).isEqualTo(1) },
@@ -185,11 +186,11 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
         fun cancelsOnce() {
             val userId = 1L
             val product = savedProduct(price = 7_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
-            orderService.confirm(userId, order.id)
+            orderFacade.confirm(userId, order.id)
 
-            val outcome = runTogether(2) { orderService.cancel(userId, order.id) }
+            val outcome = runTogether(2) { orderFacade.cancel(userId, order.id) }
 
             assertAll(
                 { assertThat(outcome.succeeded).isEqualTo(1) },
@@ -212,14 +213,14 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
         fun onlyOneWins() {
             val userId = 1L
             val product = savedProduct(price = 7_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
 
             val outcome = runTogether(2) { index ->
                 if (index == 0) {
-                    orderService.confirm(userId, order.id)
+                    orderFacade.confirm(userId, order.id)
                 } else {
-                    orderService.cancel(userId, order.id)
+                    orderFacade.cancel(userId, order.id)
                 }
             }
 
@@ -245,14 +246,14 @@ class OrderConcurrencyIntegrationTest @Autowired constructor(
         fun appliesBoth() {
             val userId = 1L
             val product = savedProduct(price = 7_000, stock = 10)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
 
             val outcome = runTogether(2) { index ->
                 if (index == 0) {
                     pointService.charge(userId, Money(2_000))
                 } else {
-                    orderService.confirm(userId, order.id)
+                    orderFacade.confirm(userId, order.id)
                 }
             }
 

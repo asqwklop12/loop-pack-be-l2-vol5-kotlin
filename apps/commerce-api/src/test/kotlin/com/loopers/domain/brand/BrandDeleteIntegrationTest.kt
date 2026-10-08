@@ -1,5 +1,6 @@
 package com.loopers.domain.brand
 
+import com.loopers.application.brand.BrandFacade
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductStatus
 import com.loopers.domain.product.Stock
@@ -22,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest
 @SpringBootTest
 class BrandDeleteIntegrationTest @Autowired constructor(
     private val brandService: BrandService,
+    private val brandFacade: BrandFacade,
     private val brandJpaRepository: BrandJpaRepository,
     private val productJpaRepository: ProductJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
@@ -40,7 +42,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
         @DisplayName("존재하지 않는 브랜드면, NOT_FOUND 예외가 발생한다.")
         @Test
         fun throwsNotFoundException_whenBrandDoesNotExist() {
-            val result = assertThrows<CoreException> { brandService.delete(-1L) }
+            val result = assertThrows<CoreException> { brandFacade.deleteBrand(-1L) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
         }
@@ -50,7 +52,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
         fun marksDeletedAt_whenNoProduct() {
             val brand = brandService.create(name = "나이키코리아")
 
-            brandService.delete(brand.id)
+            brandFacade.deleteBrand(brand.id)
 
             assertThat(brandJpaRepository.findById(brand.id).get().deletedAt).isNotNull()
         }
@@ -61,7 +63,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
             val brand = brandService.create(name = "나이키코리아")
             val product = savedProduct(brand.id, stock = 3)
 
-            brandService.delete(brand.id)
+            brandFacade.deleteBrand(brand.id)
 
             assertAll(
                 { assertThat(brandJpaRepository.findById(brand.id).get().deletedAt).isNotNull() },
@@ -76,7 +78,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
             val first = savedProduct(brand.id, name = "에어포스1")
             val second = savedProduct(brand.id, name = "에어맥스")
 
-            brandService.delete(brand.id)
+            brandFacade.deleteBrand(brand.id)
 
             assertAll(
                 { assertThat(productJpaRepository.findById(first.id).get().status).isEqualTo(ProductStatus.SUSPENDED) },
@@ -92,7 +94,7 @@ class BrandDeleteIntegrationTest @Autowired constructor(
             savedProduct(nike.id, name = "에어포스1")
             val other = savedProduct(adidas.id, name = "슈퍼스타")
 
-            brandService.delete(nike.id)
+            brandFacade.deleteBrand(nike.id)
 
             assertThat(productJpaRepository.findById(other.id).get().status).isEqualTo(ProductStatus.SELLING)
         }

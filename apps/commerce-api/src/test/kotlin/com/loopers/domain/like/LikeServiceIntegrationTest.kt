@@ -1,5 +1,6 @@
 package com.loopers.domain.like
 
+import com.loopers.application.like.LikeFacade
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.Stock
@@ -22,6 +23,7 @@ import org.springframework.boot.test.context.SpringBootTest
 @SpringBootTest
 class LikeServiceIntegrationTest @Autowired constructor(
     private val likeService: LikeService,
+    private val likeFacade: LikeFacade,
     private val likeJpaRepository: LikeJpaRepository,
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
@@ -47,7 +49,7 @@ class LikeServiceIntegrationTest @Autowired constructor(
         @DisplayName("존재하지 않는 상품이면, NOT_FOUND 예외가 발생한다.")
         @Test
         fun throwsNotFoundException_whenProductDoesNotExist() {
-            val result = assertThrows<CoreException> { likeService.like(userId = userId, productId = -1L) }
+            val result = assertThrows<CoreException> { likeFacade.like(userId = userId, productId = -1L) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
         }
@@ -58,7 +60,7 @@ class LikeServiceIntegrationTest @Autowired constructor(
             val product = savedProduct()
             productJpaRepository.save(product.apply { delete() })
 
-            val result = assertThrows<CoreException> { likeService.like(userId = userId, productId = product.id) }
+            val result = assertThrows<CoreException> { likeFacade.like(userId = userId, productId = product.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
         }

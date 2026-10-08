@@ -1,21 +1,17 @@
 package com.loopers.domain.like
 
-import com.loopers.domain.product.ProductService
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
 
 @Component
 class LikeService(
     private val likeRepository: LikeRepository,
-    private val productService: ProductService,
 ) {
     /**
      * 관계가 없을 때만 저장한다. 이미 눌렀어도 성공으로 끝난다.
      */
     @Transactional
     fun like(userId: Long, productId: Long) {
-        productService.getSellable(productId)
-
         likeRepository.find(userId, productId)
             ?: likeRepository.save(Like(userId = userId, productId = productId))
     }
@@ -29,6 +25,12 @@ class LikeService(
         likeRepository.find(userId, productId)
             ?.let { likeRepository.delete(it) }
     }
+
+    /**
+     * 상품이 사라질 때 그 상품에 달린 관계를 모두 지운다.
+     */
+    @Transactional
+    fun unlikeAll(productId: Long) = likeRepository.deleteAllByProductId(productId)
 
     @Transactional(readOnly = true)
     fun countOf(productId: Long): Long = likeRepository.countByProductId(productId)

@@ -1,5 +1,6 @@
 package com.loopers.domain.brand
 
+import com.loopers.application.brand.BrandFacade
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductStatus
 import com.loopers.domain.product.Stock
@@ -25,6 +26,7 @@ import org.springframework.boot.test.context.SpringBootTest
 @SpringBootTest
 class BrandDeleteRollbackIntegrationTest @Autowired constructor(
     private val brandService: BrandService,
+    private val brandFacade: BrandFacade,
     private val brandJpaRepository: BrandJpaRepository,
     private val productJpaRepository: ProductJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
@@ -56,7 +58,7 @@ class BrandDeleteRollbackIntegrationTest @Autowired constructor(
             IllegalStateException("브랜드 삭제 실패")
 
         // act
-        assertThrows<IllegalStateException> { brandService.delete(brand.id) }
+        assertThrows<IllegalStateException> { brandFacade.deleteBrand(brand.id) }
 
         // assert
         assertAll(

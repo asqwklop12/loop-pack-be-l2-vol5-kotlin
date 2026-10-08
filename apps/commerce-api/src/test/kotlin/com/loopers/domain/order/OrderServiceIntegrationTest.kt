@@ -1,5 +1,6 @@
 package com.loopers.domain.order
 
+import com.loopers.application.order.OrderFacade
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.point.PointService
 import com.loopers.domain.product.Product
@@ -23,7 +24,7 @@ import org.springframework.boot.test.context.SpringBootTest
 
 @SpringBootTest
 class OrderServiceIntegrationTest @Autowired constructor(
-    private val orderService: OrderService,
+    private val orderFacade: OrderFacade,
     private val pointService: PointService,
     private val productService: ProductService,
     private val productJpaRepository: ProductJpaRepository,
@@ -51,7 +52,7 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsNotFoundException_whenProductDoesNotExist() {
             val result = assertThrows<CoreException> {
-                orderService.create(userId, listOf(OrderCommand.Line(productId = -1L, quantity = 1)))
+                orderFacade.create(userId, listOf(OrderCommand.Line(productId = -1L, quantity = 1)))
             }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
@@ -64,7 +65,7 @@ class OrderServiceIntegrationTest @Autowired constructor(
             productJpaRepository.save(product.apply { delete() })
 
             val result = assertThrows<CoreException> {
-                orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+                orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
@@ -75,12 +76,12 @@ class OrderServiceIntegrationTest @Autowired constructor(
         fun storesUnitPrice_andKeepsStock() {
             val product = savedProduct(price = 1_000, stock = 5)
 
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
 
             assertAll(
-                { assertThat(order.status).isEqualTo(OrderStatus.DRAFT) },
-                { assertThat(order.totalAmount).isEqualTo(Money(2_000)) },
-                { assertThat(order.lines.first().unitPrice).isEqualTo(Money(1_000)) },
+                { assertThat(order.status).isEqualTo("DRAFT") },
+                { assertThat(order.totalAmount).isEqualTo(2_000L) },
+                { assertThat(order.lines.first().unitPrice).isEqualTo(1_000L) },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
             )
         }
@@ -97,10 +98,10 @@ class OrderServiceIntegrationTest @Autowired constructor(
         fun createsDraft_andKeepsStock() {
             val product = savedProduct(price = 1_000, stock = 1)
 
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
 
             assertAll(
-                { assertThat(order.status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(order.status).isEqualTo("DRAFT") },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(1)) },
             )
         }
@@ -116,12 +117,12 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun keepsStock_whenDraft() {
             val product = savedProduct(price = 1_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
 
-            val canceled = orderService.cancel(userId, order.id)
+            val canceled = orderFacade.cancel(userId, order.id)
 
             assertAll(
-                { assertThat(canceled.status).isEqualTo(OrderStatus.CANCELED) },
+                { assertThat(canceled.status).isEqualTo("CANCELED") },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money.ZERO) },
             )
@@ -131,15 +132,15 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun restoresPointAndStock_whenConfirmed() {
             val product = savedProduct(price = 7_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
-            orderService.confirm(userId, order.id)
+            orderFacade.confirm(userId, order.id)
 
-            val canceled = orderService.cancel(userId, order.id)
+            val canceled = orderFacade.cancel(userId, order.id)
 
             assertAll(
-                { assertThat(canceled.status).isEqualTo(OrderStatus.CANCELED) },
-                { assertThat(canceled.paidAmount).isEqualTo(Money(7_000)) },
+                { assertThat(canceled.status).isEqualTo("CANCELED") },
+                { assertThat(canceled.paidAmount).isEqualTo(7_000L) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
             )
@@ -149,9 +150,9 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsNotFoundException_whenNotOwner() {
             val product = savedProduct()
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
 
-            val result = assertThrows<CoreException> { orderService.cancel(userId = 999L, orderId = order.id) }
+            val result = assertThrows<CoreException> { orderFacade.cancel(userId = 999L, orderId = order.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
         }
@@ -160,10 +161,10 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsConflictException_whenAlreadyCanceled() {
             val product = savedProduct()
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
-            orderService.cancel(userId, order.id)
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            orderFacade.cancel(userId, order.id)
 
-            val result = assertThrows<CoreException> { orderService.cancel(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.cancel(userId, order.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.CONFLICT)
         }
@@ -172,11 +173,11 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsConflictException_whenConfirmingCanceledOrder() {
             val product = savedProduct()
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
-            orderService.cancel(userId, order.id)
+            orderFacade.cancel(userId, order.id)
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId, order.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.CONFLICT)
         }
@@ -189,9 +190,9 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsNotFoundException_whenNotOwner() {
             val product = savedProduct()
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId = 999L, orderId = order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId = 999L, orderId = order.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
         }
@@ -203,14 +204,14 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsBadRequestException_whenBalanceIsNotEnough() {
             val product = savedProduct(price = 10_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             pointService.charge(userId, Money(1_000))
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId, order.id) }
 
             assertAll(
                 { assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
-                { assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(orderFacade.get(userId, order.id).status).isEqualTo("DRAFT") },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(1_000)) },
             )
@@ -220,14 +221,14 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsBadRequestException_whenStockIsNotEnough() {
             val product = savedProduct(price = 1_000, stock = 1)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
             pointService.charge(userId, Money(10_000))
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId, order.id) }
 
             assertAll(
                 { assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
-                { assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(orderFacade.get(userId, order.id).status).isEqualTo("DRAFT") },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(1)) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
             )
@@ -240,15 +241,15 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsNotFoundException_whenProductIsDeleted() {
             val product = savedProduct(price = 1_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
             productJpaRepository.save(product.apply { delete() })
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId, order.id) }
 
             assertAll(
                 { assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND) },
-                { assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(orderFacade.get(userId, order.id).status).isEqualTo("DRAFT") },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
             )
         }
@@ -257,15 +258,15 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsNotFoundException_whenProductIsSuspended() {
             val product = savedProduct(price = 1_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
             productJpaRepository.save(product.apply { suspend() })
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId, order.id) }
 
             assertAll(
                 { assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND) },
-                { assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(orderFacade.get(userId, order.id).status).isEqualTo("DRAFT") },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
             )
         }
@@ -274,14 +275,14 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun decreasesStockAndBalance_andStoresPaidAmount() {
             val product = savedProduct(price = 7_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
 
-            val confirmed = orderService.confirm(userId, order.id)
+            val confirmed = orderFacade.confirm(userId, order.id)
 
             assertAll(
-                { assertThat(confirmed.status).isEqualTo(OrderStatus.CONFIRMED) },
-                { assertThat(confirmed.paidAmount).isEqualTo(Money(7_000)) },
+                { assertThat(confirmed.status).isEqualTo("CONFIRMED") },
+                { assertThat(confirmed.paidAmount).isEqualTo(7_000L) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(3_000)) },
                 { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(4)) },
             )
@@ -291,11 +292,11 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsConflictException_whenAlreadyConfirmed() {
             val product = savedProduct(price = 1_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
-            orderService.confirm(userId, order.id)
+            orderFacade.confirm(userId, order.id)
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId, order.id) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.CONFLICT)
         }
@@ -315,17 +316,17 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun keepsUnitPriceAndTotal_whenProductPriceChanges() {
             val product = savedProduct(price = 1_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
 
             productJpaRepository.save(product.apply { update(name = "상품", price = Money(9_000)) })
 
-            val found = orderService.get(userId, order.id)
+            val found = orderFacade.get(userId, order.id)
             assertAll(
                 // 가격이 실제로 바뀌었는지부터 못 박는다. 안 바뀌면 아래가 빈껍데기로 통과한다
                 { assertThat(productService.get(product.id).price).isEqualTo(Money(9_000)) },
-                { assertThat(found.lines.first().unitPrice).isEqualTo(Money(1_000)) },
-                { assertThat(found.lines.first().amount).isEqualTo(Money(2_000)) },
-                { assertThat(found.totalAmount).isEqualTo(Money(2_000)) },
+                { assertThat(found.lines.first().unitPrice).isEqualTo(1_000L) },
+                { assertThat(found.lines.first().amount).isEqualTo(2_000L) },
+                { assertThat(found.totalAmount).isEqualTo(2_000L) },
             )
         }
 
@@ -333,20 +334,20 @@ class OrderServiceIntegrationTest @Autowired constructor(
         @Test
         fun keepsPaidAmount_whenProductPriceChanges() {
             val product = savedProduct(price = 7_000, stock = 5)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 1)))
             pointService.charge(userId, Money(10_000))
-            orderService.confirm(userId, order.id)
+            orderFacade.confirm(userId, order.id)
 
             // 확정이 재고를 줄여 버전이 올라갔다. 들고 있던 인스턴스로 저장하면 낙관락에 걸린다
             val reloaded = productJpaRepository.findById(product.id).get()
             productJpaRepository.save(reloaded.apply { update(name = "상품", price = Money(1_000)) })
 
-            val found = orderService.get(userId, order.id)
+            val found = orderFacade.get(userId, order.id)
             assertAll(
                 { assertThat(productService.get(product.id).price).isEqualTo(Money(1_000)) },
-                { assertThat(found.status).isEqualTo(OrderStatus.CONFIRMED) },
-                { assertThat(found.paidAmount).isEqualTo(Money(7_000)) },
-                { assertThat(found.totalAmount).isEqualTo(Money(7_000)) },
+                { assertThat(found.status).isEqualTo("CONFIRMED") },
+                { assertThat(found.paidAmount).isEqualTo(7_000L) },
+                { assertThat(found.totalAmount).isEqualTo(7_000L) },
             )
         }
 
@@ -359,20 +360,20 @@ class OrderServiceIntegrationTest @Autowired constructor(
         fun keepsOrderAndLines_whenProductIsDeleted() {
             // 상품 삭제는 재고가 0일 때만 된다. 생성이 더는 재고를 줄이지 않으므로 처음부터 0으로 둔다
             val product = savedProduct(price = 1_000, stock = 0)
-            val order = orderService.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
+            val order = orderFacade.create(userId, listOf(OrderCommand.Line(productId = product.id, quantity = 2)))
 
             productService.delete(product.id)
 
-            val found = orderService.get(userId, order.id)
+            val found = orderFacade.get(userId, order.id)
             assertAll(
                 // 상품이 실제로 지워졌는지부터 못 박는다
                 { assertThrows<CoreException> { productService.get(product.id) } },
                 { assertThat(found.lines).hasSize(1) },
                 { assertThat(found.lines.first().productId).isEqualTo(product.id) },
                 { assertThat(found.lines.first().quantity).isEqualTo(2) },
-                { assertThat(found.lines.first().unitPrice).isEqualTo(Money(1_000)) },
-                { assertThat(found.totalAmount).isEqualTo(Money(2_000)) },
-                { assertThat(orderService.getAll(userId)).hasSize(1) },
+                { assertThat(found.lines.first().unitPrice).isEqualTo(1_000L) },
+                { assertThat(found.totalAmount).isEqualTo(2_000L) },
+                { assertThat(orderFacade.getAll(userId)).hasSize(1) },
             )
         }
     }
@@ -389,7 +390,7 @@ class OrderServiceIntegrationTest @Autowired constructor(
         fun appliesEveryLine() {
             val first = savedProduct(price = 1_000, stock = 5)
             val second = savedProduct(price = 2_000, stock = 5)
-            val order = orderService.create(
+            val order = orderFacade.create(
                 userId,
                 listOf(
                     OrderCommand.Line(productId = first.id, quantity = 2),
@@ -398,11 +399,11 @@ class OrderServiceIntegrationTest @Autowired constructor(
             )
             pointService.charge(userId, Money(10_000))
 
-            val confirmed = orderService.confirm(userId, order.id)
+            val confirmed = orderFacade.confirm(userId, order.id)
 
             assertAll(
-                { assertThat(confirmed.status).isEqualTo(OrderStatus.CONFIRMED) },
-                { assertThat(confirmed.paidAmount).isEqualTo(Money(4_000)) },
+                { assertThat(confirmed.status).isEqualTo("CONFIRMED") },
+                { assertThat(confirmed.paidAmount).isEqualTo(4_000L) },
                 { assertThat(productJpaRepository.findById(first.id).get().stock).isEqualTo(Stock(3)) },
                 { assertThat(productJpaRepository.findById(second.id).get().stock).isEqualTo(Stock(4)) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(6_000)) },
@@ -418,7 +419,7 @@ class OrderServiceIntegrationTest @Autowired constructor(
         fun restoresEveryLine_whenBalanceIsNotEnough() {
             val first = savedProduct(price = 5_000, stock = 5)
             val second = savedProduct(price = 5_000, stock = 5)
-            val order = orderService.create(
+            val order = orderFacade.create(
                 userId,
                 listOf(
                     OrderCommand.Line(productId = first.id, quantity = 1),
@@ -427,11 +428,11 @@ class OrderServiceIntegrationTest @Autowired constructor(
             )
             pointService.charge(userId, Money(1_000))
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId, order.id) }
 
             assertAll(
                 { assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
-                { assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(orderFacade.get(userId, order.id).status).isEqualTo("DRAFT") },
                 { assertThat(productJpaRepository.findById(first.id).get().stock).isEqualTo(Stock(5)) },
                 { assertThat(productJpaRepository.findById(second.id).get().stock).isEqualTo(Stock(5)) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(1_000)) },
@@ -443,7 +444,7 @@ class OrderServiceIntegrationTest @Autowired constructor(
         fun restoresEveryLine_whenOneLineIsOutOfStock() {
             val enough = savedProduct(price = 1_000, stock = 5)
             val scarce = savedProduct(price = 1_000, stock = 1)
-            val order = orderService.create(
+            val order = orderFacade.create(
                 userId,
                 listOf(
                     OrderCommand.Line(productId = enough.id, quantity = 2),
@@ -452,11 +453,11 @@ class OrderServiceIntegrationTest @Autowired constructor(
             )
             pointService.charge(userId, Money(10_000))
 
-            val result = assertThrows<CoreException> { orderService.confirm(userId, order.id) }
+            val result = assertThrows<CoreException> { orderFacade.confirm(userId, order.id) }
 
             assertAll(
                 { assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
-                { assertThat(orderService.get(userId, order.id).status).isEqualTo(OrderStatus.DRAFT) },
+                { assertThat(orderFacade.get(userId, order.id).status).isEqualTo("DRAFT") },
                 { assertThat(productJpaRepository.findById(enough.id).get().stock).isEqualTo(Stock(5)) },
                 { assertThat(productJpaRepository.findById(scarce.id).get().stock).isEqualTo(Stock(1)) },
                 { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },

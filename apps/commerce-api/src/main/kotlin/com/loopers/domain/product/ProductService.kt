@@ -1,7 +1,5 @@
 package com.loopers.domain.product
 
-import com.loopers.domain.brand.BrandRepository
-import com.loopers.domain.like.LikeRepository
 import com.loopers.domain.shared.Money
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
@@ -11,16 +9,13 @@ import org.springframework.transaction.annotation.Transactional
 @Component
 class ProductService(
     private val productRepository: ProductRepository,
-    private val brandRepository: BrandRepository,
-    private val likeRepository: LikeRepository,
 ) {
     /**
      * 재고는 생성에서 받지 않는다. 항상 0 으로 시작하고 재고 변경으로만 바꾼다.
+     * 브랜드가 있는지는 다른 도메인이라 퍼사드가 먼저 본다.
      */
     @Transactional
     fun create(brandId: Long, name: String, price: Money): Product {
-        requireExistingBrand(brandId)
-
         return productRepository.save(
             Product(brandId = brandId, name = name, price = price, stock = Stock(INITIAL_STOCK)),
         )
@@ -119,14 +114,8 @@ class ProductService(
             throw CoreException(ErrorType.CONFLICT, "재고가 남아 있어 삭제할 수 없습니다. [재고 = ${product.stock}]")
         }
 
-        likeRepository.deleteAllByProductId(id)
         product.delete()
         productRepository.save(product)
-    }
-
-    private fun requireExistingBrand(brandId: Long) {
-        brandRepository.find(brandId)
-            ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $brandId] 브랜드를 찾을 수 없습니다.")
     }
 
     companion object {

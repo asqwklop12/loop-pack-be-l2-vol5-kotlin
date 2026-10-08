@@ -10,6 +10,7 @@ import com.loopers.domain.shared.Money
 import com.loopers.support.error.CoreException
 import com.loopers.support.error.ErrorType
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
 
 /**
  * 상품·브랜드·좋아요 수를 조합한다. 조회 결과의 구성은 application 의 책임이다.
@@ -48,8 +49,15 @@ class ProductFacade(
     fun getLikedProducts(userId: Long): List<ProductInfo> =
         combine(productService.getAllByIds(likeService.likedProductIds(userId)))
 
-    fun createProduct(brandId: Long, name: String, price: Long): ProductInfo =
-        combine(listOf(productService.create(brandId = brandId, name = name, price = Money(price)))).first()
+    /**
+     * 브랜드가 있는지 먼저 본다. 다른 도메인이라 여기서 확인한다.
+     */
+    @Transactional
+    fun createProduct(brandId: Long, name: String, price: Long): ProductInfo {
+        brandService.get(brandId)
+
+        return combine(listOf(productService.create(brandId = brandId, name = name, price = Money(price)))).first()
+    }
 
     fun updateProduct(productId: Long, name: String, price: Long): ProductInfo =
         combine(listOf(productService.update(id = productId, name = name, price = Money(price)))).first()
@@ -57,7 +65,15 @@ class ProductFacade(
     fun changeStock(productId: Long, amount: Int): ProductInfo =
         combine(listOf(productService.changeStock(id = productId, amount = amount))).first()
 
-    fun deleteProduct(productId: Long) = productService.delete(productId)
+    /**
+     * 상품이 사라지면 그 상품에 달린 좋아요도 함께 지운다.
+     */
+    @Transactional
+    fun deleteProduct(productId: Long) {
+        productService.delete(productId)
+
+        likeService.unlikeAll(productId)
+    }
 
     /**
      * 브랜드와 좋아요 수를 한 번씩만 조회해 붙인다. 상품마다 조회하면 목록 크기만큼 쿼리가 늘어난다.
