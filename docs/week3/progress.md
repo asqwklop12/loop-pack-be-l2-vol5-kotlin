@@ -1,9 +1,4 @@
-# 구현 기록 — 3주차
-
-주제는 **동시성**이다. 2주차 기록은 `../week2/progress.md` 에 있다.
-
-`CLAUDE.md` 의 TDD 규칙(`RED → GREEN → REFACTOR`)을 따른다. 각 항목의 RED 는 실행해서
-확인한 실패다.
+# 구현 기록
 
 ---
 
