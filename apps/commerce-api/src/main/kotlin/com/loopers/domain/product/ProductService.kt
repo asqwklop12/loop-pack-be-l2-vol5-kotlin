@@ -37,12 +37,10 @@ class ProductService(
 
     /**
      * 브랜드가 내려갈 때 그 브랜드의 상품을 모두 판매중지로 바꾼다.
+     * 상품 수만큼 UPDATE 가 돌지 않도록 한 번에 바꾼다.
      */
     @Transactional
-    fun suspendAllByBrand(brandId: Long) {
-        productRepository.findAllActiveByBrandId(brandId)
-            .forEach { productRepository.save(it.also { product -> product.suspend() }) }
-    }
+    fun suspendAllByBrand(brandId: Long): Int = productRepository.suspendAllByBrandId(brandId)
 
     @Transactional(readOnly = true)
     fun search(search: ProductSearch): List<Product> = productRepository.search(search)
