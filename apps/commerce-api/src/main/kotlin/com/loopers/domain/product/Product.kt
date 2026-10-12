@@ -8,7 +8,10 @@ import jakarta.persistence.AttributeOverride
 import jakarta.persistence.Column
 import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 
 @Entity
 @Table(name = "product")
@@ -35,9 +38,32 @@ class Product(
     var stock: Stock = stock
         protected set
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    var status: ProductStatus = ProductStatus.SELLING
+        protected set
+
+    /**
+     * 재고를 동시에 줄이면 둘 다 같은 값을 읽고 같은 값을 써서 **하나가 사라진다.**
+     * 읽은 값이 아직 유효한지를 저장할 때 확인한다.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    var version: Long = 0
+        protected set
+
     init {
         guardName(name)
         guardPrice(price)
+    }
+
+    fun isSellable(): Boolean = status == ProductStatus.SELLING
+
+    /**
+     * 판매를 중지한다. 이미 중지된 상품을 다시 중지해도 결과가 같다.
+     */
+    fun suspend() {
+        this.status = ProductStatus.SUSPENDED
     }
 
     fun update(name: String, price: Money) {

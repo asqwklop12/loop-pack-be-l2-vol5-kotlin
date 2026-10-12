@@ -11,8 +11,10 @@ import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.FetchType
 import jakarta.persistence.OneToMany
 import jakarta.persistence.Table
+import jakarta.persistence.Version
 
 @Entity
 @Table(name = "orders")
@@ -24,7 +26,10 @@ class Order(
     var userId: Long = userId
         protected set
 
-    @OneToMany(mappedBy = "order", cascade = [CascadeType.ALL], orphanRemoval = true)
+    /**
+     * 한 애그리거트이므로 루트를 읽으면 라인도 함께 온다. 라인 없이 의미를 갖는 주문이 없다.
+     */
+    @OneToMany(mappedBy = "order", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     private val _lines: MutableList<OrderLine> = lines.toMutableList()
 
     val lines: List<OrderLine> get() = _lines.toList()
@@ -42,6 +47,15 @@ class Order(
     @Embedded
     @AttributeOverride(name = "amount", column = Column(name = "paid_amount"))
     var paidAmount: Money? = null
+        protected set
+
+    /**
+     * 확정은 DRAFT 에서 한 번만 일어나야 한다. 확정이 겹치면 둘 다 같은 값을 읽고 통과하므로,
+     * **나중에 저장하는 쪽을 이 값으로 떨어뜨린다.**
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    var version: Long = 0
         protected set
 
     init {
@@ -69,12 +83,19 @@ class Order(
     }
 
     /**
-     * 확정은 금액이 고정되는 사건이다. 결제액은 합계와 같아야 한다.
+     * 확정할 수 있는 상태인지만 본다. 재고와 결제를 건드리기 전에 먼저 거르려고 따로 둔다.
      */
-    fun confirm(paidAmount: Money) {
+    fun requireDraft() {
         if (status != OrderStatus.DRAFT) {
             throw CoreException(ErrorType.CONFLICT, "확정할 수 없는 주문 상태입니다. [상태 = $status]")
         }
+    }
+
+    /**
+     * 확정은 금액이 고정되는 사건이다. 결제액은 합계와 같아야 한다.
+     */
+    fun confirm(paidAmount: Money) {
+        requireDraft()
         if (paidAmount != totalAmount) {
             throw CoreException(ErrorType.BAD_REQUEST, "결제액이 주문 합계와 다릅니다. [합계 = $totalAmount, 결제액 = $paidAmount]")
         }

@@ -11,4 +11,7 @@ class PointRepositoryImpl(
     override fun save(pointBalance: PointBalance): PointBalance = pointJpaRepository.save(pointBalance)
 
     override fun findByUserId(userId: Long): PointBalance? = pointJpaRepository.findByUserId(userId)
+
+    override fun findByUserIdForUpdate(userId: Long): PointBalance? =
+        pointJpaRepository.findByUserIdForUpdate(userId)
 }

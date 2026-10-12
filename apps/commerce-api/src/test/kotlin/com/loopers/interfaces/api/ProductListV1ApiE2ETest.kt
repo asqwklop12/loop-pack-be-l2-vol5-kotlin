@@ -79,6 +79,30 @@ class ProductListV1ApiE2ETest @Autowired constructor(
             )
         }
 
+        @DisplayName("판매중지된 상품은 목록에서도 상세에서도 빠진다.")
+        @Test
+        fun excludesSuspendedFromListAndDetail() {
+            val brand = savedBrand("나이키코리아")
+            savedProduct(brand.id, "판매중상품", 1_000)
+            val suspended = savedProduct(brand.id, "판매중지상품", 2_000)
+            productJpaRepository.save(suspended.apply { suspend() })
+
+            val list = get()
+            val detailType = object : ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductResponse>>() {}
+            val detail = testRestTemplate.exchange(
+                "/api/v1/products/${suspended.id}",
+                HttpMethod.GET,
+                HttpEntity<Any>(Unit),
+                detailType,
+            )
+
+            assertAll(
+                { assertThat(list.body?.data?.items?.map { it.name }).containsExactly("판매중상품") },
+                { assertThat(list.body?.data?.totalCount).isEqualTo(1L) },
+                { assertThat(detail.statusCode).isEqualTo(HttpStatus.NOT_FOUND) },
+            )
+        }
+
         @DisplayName("삭제된 상품은 목록에서 제외된다.")
         @Test
         fun excludesDeletedProducts() {

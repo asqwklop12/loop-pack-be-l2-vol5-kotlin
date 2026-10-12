@@ -47,7 +47,7 @@ class ProductV1AdminController(
     ): ApiResponse<AdminV1Dto.ProductV1.Response> {
         AdminRole.guard(role)
 
-        return productFacade.getProduct(productId)
+        return productFacade.getProductForAdmin(productId)
             .let { AdminV1Dto.ProductV1.Response.from(it) }
             .let { ApiResponse.success(it) }
     }

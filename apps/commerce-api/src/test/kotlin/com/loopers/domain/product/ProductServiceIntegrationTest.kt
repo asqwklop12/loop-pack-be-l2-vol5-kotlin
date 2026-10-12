@@ -1,5 +1,6 @@
 package com.loopers.domain.product
 
+import com.loopers.application.product.ProductFacade
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandJpaRepository
@@ -19,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest
 @SpringBootTest
 class ProductServiceIntegrationTest @Autowired constructor(
     private val productService: ProductService,
+    private val productFacade: ProductFacade,
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
     private val likeJpaRepository: com.loopers.infrastructure.like.LikeJpaRepository,
@@ -38,7 +40,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
         @Test
         fun throwsNotFoundException_whenBrandDoesNotExist() {
             val result = assertThrows<CoreException> {
-                productService.create(brandId = -1L, name = "에어포스1", price = Money(129_000))
+                productFacade.createProduct(brandId = -1L, name = "에어포스1", price = 129_000)
             }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
@@ -51,7 +53,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
             brandJpaRepository.save(brand.apply { delete() })
 
             val result = assertThrows<CoreException> {
-                productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000))
+                productFacade.createProduct(brandId = brand.id, name = "에어포스1", price = 129_000)
             }
 
             assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
@@ -94,6 +96,45 @@ class ProductServiceIntegrationTest @Autowired constructor(
         }
     }
 
+    /**
+     * 브랜드가 내려가면 그 상품은 고객의 사용 대상에서 빠진다. 그 상태에서 가격을 바꾸거나
+     * 재고를 채울 수 있으면, **고객에게 안 보이는 채로 상품이 움직인다.**
+     * 되살릴 길이 없으므로 손댈 수도 없게 막는다.
+     */
+    @DisplayName("판매중지된 상품은, ")
+    @Nested
+    inner class Suspended {
+        private fun suspendedProduct(): Product {
+            val brand = savedBrand()
+            val product = productService.create(brandId = brand.id, name = "에어포스1", price = Money(129_000))
+            return productJpaRepository.save(product.apply { suspend() })
+        }
+
+        @DisplayName("수정하면, 없는 상품과 같은 NOT_FOUND 예외가 발생한다.")
+        @Test
+        fun throwsNotFoundException_whenUpdating() {
+            val product = suspendedProduct()
+
+            val result = assertThrows<CoreException> {
+                productService.update(product.id, name = "에어맥스", price = Money(99_000))
+            }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
+            assertThat(productJpaRepository.findById(product.id).get().name).isEqualTo("에어포스1")
+        }
+
+        @DisplayName("재고를 바꾸면, 없는 상품과 같은 NOT_FOUND 예외가 발생한다.")
+        @Test
+        fun throwsNotFoundException_whenChangingStock() {
+            val product = suspendedProduct()
+
+            val result = assertThrows<CoreException> { productService.changeStock(product.id, amount = 10) }
+
+            assertThat(result.errorType).isEqualTo(ErrorType.NOT_FOUND)
+            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(0))
+        }
+    }
+
     @DisplayName("상품을 삭제할 때, ")
     @Nested
     inner class Delete {
@@ -119,7 +160,7 @@ class ProductServiceIntegrationTest @Autowired constructor(
             likeJpaRepository.save(com.loopers.domain.like.Like(userId = 1L, productId = product.id))
             likeJpaRepository.save(com.loopers.domain.like.Like(userId = 2L, productId = product.id))
 
-            productService.delete(product.id)
+            productFacade.deleteProduct(product.id)
 
             assertThat(likeJpaRepository.countByProductId(product.id)).isEqualTo(0L)
         }

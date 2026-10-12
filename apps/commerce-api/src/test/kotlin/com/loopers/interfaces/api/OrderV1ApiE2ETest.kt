@@ -23,6 +23,10 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OrderV1ApiE2ETest @Autowired constructor(
@@ -71,7 +75,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
     @DisplayName("POST /api/v1/orders")
     @Nested
     inner class Create {
-        @DisplayName("주문을 만들면, DRAFT 와 합계를 반환하고 재고가 차감된다.")
+        @DisplayName("주문을 만들면, DRAFT 와 합계를 반환하고 재고는 그대로다.")
         @Test
         fun returnsDraftOrder() {
             val product = savedProduct(price = 1_000, stock = 5)
@@ -83,7 +87,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
                 { assertThat(response.body?.data?.status).isEqualTo("DRAFT") },
                 { assertThat(response.body?.data?.totalAmount).isEqualTo(2_000L) },
                 { assertThat(response.body?.data?.paidAmount).isNull() },
-                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(3)) },
+                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5)) },
             )
         }
 
@@ -100,6 +104,18 @@ class OrderV1ApiE2ETest @Autowired constructor(
             productJpaRepository.save(product.apply { delete() })
 
             assertThat(createOrder(product.id).statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+        }
+
+        @DisplayName("판매중지된 상품이면, 없는 상품과 같은 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenProductIsSuspended() {
+            val product = savedProduct(stock = 5)
+            productJpaRepository.save(product.apply { suspend() })
+
+            val response = createOrder(product.id)
+
+            assertThat(response.statusCode).isEqualTo(HttpStatus.NOT_FOUND)
+            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5))
         }
 
         @DisplayName("수량이 0이면, 400 BAD_REQUEST 응답을 받는다.")
@@ -137,7 +153,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
     @DisplayName("POST /api/v1/orders/{orderId}/confirm")
     @Nested
     inner class Confirm {
-        @DisplayName("확정하면, CONFIRMED 와 결제액을 반환하고 잔액이 줄어든다. 재고는 생성 때 이미 줄었다.")
+        @DisplayName("확정하면, CONFIRMED 와 결제액을 반환하고 이때 재고와 잔액이 줄어든다.")
         @Test
         fun returnsConfirmedOrder() {
             val product = savedProduct(price = 7_000, stock = 5)
@@ -155,7 +171,7 @@ class OrderV1ApiE2ETest @Autowired constructor(
             )
         }
 
-        @DisplayName("잔액이 부족하면, 400 BAD_REQUEST 응답을 받고 주문이 DRAFT 로 남는다.")
+        @DisplayName("잔액이 부족하면, 400 BAD_REQUEST 응답을 받고 주문과 재고가 그대로 남는다.")
         @Test
         fun returnsBadRequest_whenBalanceIsNotEnough() {
             val product = savedProduct(price = 10_000, stock = 5)
@@ -164,7 +180,74 @@ class OrderV1ApiE2ETest @Autowired constructor(
             val response = confirm(orderId)
 
             assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
-            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(4))
+            assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(5))
+        }
+
+        @DisplayName("재고가 부족하면, 400 BAD_REQUEST 응답을 받고 잔액이 그대로 남는다.")
+        @Test
+        fun returnsBadRequest_whenStockIsNotEnough() {
+            val product = savedProduct(price = 1_000, stock = 1)
+            val orderId = createOrder(product.id, quantity = 2).body!!.data!!.id
+            pointService.charge(userId, Money(10_000))
+
+            val response = confirm(orderId)
+
+            assertAll(
+                { assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
+                { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(1)) },
+            )
+        }
+
+        @DisplayName("상품이 판매중지되었으면, 없는 상품과 같은 404 NOT_FOUND 응답을 받는다.")
+        @Test
+        fun returnsNotFound_whenProductIsSuspended() {
+            val product = savedProduct(price = 1_000, stock = 5)
+            val orderId = createOrder(product.id).body!!.data!!.id
+            pointService.charge(userId, Money(10_000))
+            productJpaRepository.save(product.apply { suspend() })
+
+            val response = confirm(orderId)
+
+            assertAll(
+                { assertThat(response.statusCode).isEqualTo(HttpStatus.NOT_FOUND) },
+                { assertThat(pointService.getBalance(userId)).isEqualTo(Money(10_000)) },
+            )
+        }
+
+        /**
+         * 확정이 겹치면 나중 쪽이 낙관락에서 떨어진다. 그 예외가 그대로 올라가면 500 이 나간다.
+         * 고객이 보기에는 "이미 확정된 주문" 과 같은 상황이므로 같은 409 여야 한다.
+         */
+        @DisplayName("동시에 두 번 확정하면, 하나는 409 CONFLICT 응답을 받는다.")
+        @Test
+        fun returnsConflict_whenConfirmedAtTheSameTime() {
+            val product = savedProduct(price = 1_000, stock = 10)
+            val orderId = createOrder(product.id, quantity = 2).body!!.data!!.id
+            pointService.charge(userId, Money(10_000))
+
+            val start = CountDownLatch(1)
+            val done = CountDownLatch(2)
+            val statuses = Collections.synchronizedList(mutableListOf<HttpStatus>())
+            val pool = Executors.newFixedThreadPool(2)
+            repeat(2) {
+                pool.submit {
+                    start.await()
+                    try {
+                        statuses.add(confirm(orderId).statusCode as HttpStatus)
+                    } finally {
+                        done.countDown()
+                    }
+                }
+            }
+            start.countDown()
+            done.await(10, TimeUnit.SECONDS)
+            pool.shutdown()
+
+            assertAll(
+                { assertThat(statuses).filteredOn { it.is2xxSuccessful }.hasSize(1) },
+                { assertThat(statuses).contains(HttpStatus.CONFLICT) },
+            )
         }
 
         @DisplayName("이미 확정된 주문을 다시 확정하면, 409 CONFLICT 응답을 받는다.")
@@ -199,9 +282,9 @@ class OrderV1ApiE2ETest @Autowired constructor(
                 orderType,
             )
 
-        @DisplayName("확정 전 주문을 취소하면, CANCELED 가 되고 재고가 복원된다.")
+        @DisplayName("확정 전 주문을 취소하면, CANCELED 가 되고 재고는 그대로다.")
         @Test
-        fun returnsCanceled_andRestoresStock() {
+        fun returnsCanceled_andKeepsStock() {
             val product = savedProduct(stock = 5)
             val orderId = createOrder(product.id, quantity = 2).body!!.data!!.id
 

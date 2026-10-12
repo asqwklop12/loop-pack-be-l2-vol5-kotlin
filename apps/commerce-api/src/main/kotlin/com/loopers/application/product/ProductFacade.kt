@@ -14,9 +14,7 @@ import org.springframework.transaction.annotation.Transactional
 
 /**
  * 상품·브랜드·좋아요 수를 조합한다. 조회 결과의 구성은 application 의 책임이다.
- *
- * 트랜잭션 경계는 이 계층이다. 도메인 서비스마다 따로 열리면 목록 하나에 트랜잭션이
- * 상품 수만큼 늘어난다.
+
  */
 @Component
 class ProductFacade(
@@ -24,13 +22,18 @@ class ProductFacade(
     private val brandService: BrandService,
     private val likeService: LikeService,
 ) {
-    @Transactional(readOnly = true)
-    fun getProduct(productId: Long): ProductInfo = combine(listOf(productService.get(productId))).first()
+    /**
+     * 고객 상세 조회. 판매중지 상품은 없는 것과 같은 응답을 준다.
+     */
+    fun getProduct(productId: Long): ProductInfo = combine(listOf(productService.getSellable(productId))).first()
 
-    @Transactional(readOnly = true)
+    /**
+     * 관리자 상세 조회. 판매중지 상품도 보인다.
+     */
+    fun getProductForAdmin(productId: Long): ProductInfo = combine(listOf(productService.get(productId))).first()
+
     fun getProducts(): List<ProductInfo> = combine(productService.getAll())
 
-    @Transactional(readOnly = true)
     fun searchProducts(search: ProductSearch): ProductPage {
         return ProductPage(
             items = combine(productService.search(search)),
@@ -43,24 +46,34 @@ class ProductFacade(
     /**
      * 내가 좋아요한 상품 목록. 삭제된 상품은 제외한다.
      */
-    @Transactional(readOnly = true)
     fun getLikedProducts(userId: Long): List<ProductInfo> =
         combine(productService.getAllByIds(likeService.likedProductIds(userId)))
 
+    /**
+     * 브랜드가 있는지 먼저 본다. 다른 도메인이라 여기서 확인한다.
+     */
     @Transactional
-    fun createProduct(brandId: Long, name: String, price: Long): ProductInfo =
-        combine(listOf(productService.create(brandId = brandId, name = name, price = Money(price)))).first()
+    fun createProduct(brandId: Long, name: String, price: Long): ProductInfo {
+        brandService.get(brandId)
 
-    @Transactional
+        return combine(listOf(productService.create(brandId = brandId, name = name, price = Money(price)))).first()
+    }
+
     fun updateProduct(productId: Long, name: String, price: Long): ProductInfo =
         combine(listOf(productService.update(id = productId, name = name, price = Money(price)))).first()
 
-    @Transactional
     fun changeStock(productId: Long, amount: Int): ProductInfo =
         combine(listOf(productService.changeStock(id = productId, amount = amount))).first()
 
+    /**
+     * 상품이 사라지면 그 상품에 달린 좋아요도 함께 지운다.
+     */
     @Transactional
-    fun deleteProduct(productId: Long) = productService.delete(productId)
+    fun deleteProduct(productId: Long) {
+        productService.delete(productId)
+
+        likeService.unlikeAll(productId)
+    }
 
     /**
      * 브랜드와 좋아요 수를 한 번씩만 조회해 붙인다. 상품마다 조회하면 목록 크기만큼 쿼리가 늘어난다.
