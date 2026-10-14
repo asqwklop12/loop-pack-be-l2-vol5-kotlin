@@ -1,0 +1,76 @@
+# 시점별 MySQL — 시간이 지난 상태를 따로 띄워서 비교한다.
+#
+# 같은 MySQL 안에 스키마만 다르게 두면 버퍼 풀(기본 128MB)을 서로 밀어내
+# "인덱스 효과"와 "캐시 경합"이 섞인다. 컨테이너를 나눠 각자 버퍼 풀을 갖게 한다.
+#
+# day1 은 docker/infra-compose.yml 의 mysql (3306) 을 그대로 쓴다.
+#
+# 프로젝트 이름(-p)을 반드시 지정한다. 기본값은 디렉터리명(docker)이라
+# infra-compose.yml 의 네트워크를 건드린다.
+#
+#   올리기:  docker compose -p loopers-day2 -f docker/timeline-compose.yml up -d
+#   접속:    docker exec -i mysql-day2 mysql -uroot -proot loopers   (day3 은 mysql-day3)
+#   내리기:  docker compose -p loopers-day2 -f docker/timeline-compose.yml down
+#   데이터까지 지우기: ... down -v
+#
+# 시점
+#   day1  3306  2026-10-14  상품 100만 · 좋아요 198만
+#   day2  3307  2027-04-14  상품 150만 · 좋아요 400만
+#   day3  3308  2027-10-14  상품 200만 · 좋아요 600만 · 신규 브랜드 10개 입주
+
+services:
+  mysql-day2:
+    image: mysql:8.0
+    container_name: mysql-day2
+    ports:
+      - "3307:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_USER=application
+      - MYSQL_PASSWORD=application
+      - MYSQL_DATABASE=loopers
+      - MYSQL_CHARACTER_SET=utf8mb4
+      - MYSQL_COLLATE=utf8mb4_general_ci
+    command:
+      [
+        "mysqld",
+        "--innodb-buffer-pool-size=134217728",   # day1 과 같게 고정한다 (128MB)
+        "--performance-schema=ON",
+      ]
+    volumes:
+      - mysql-day2-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mysql-day3:
+    image: mysql:8.0
+    container_name: mysql-day3
+    ports:
+      - "3308:3306"
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_USER=application
+      - MYSQL_PASSWORD=application
+      - MYSQL_DATABASE=loopers
+      - MYSQL_CHARACTER_SET=utf8mb4
+      - MYSQL_COLLATE=utf8mb4_general_ci
+    command:
+      [
+        "mysqld",
+        "--innodb-buffer-pool-size=134217728",   # 세 시점 모두 같게 고정한다 (128MB)
+        "--performance-schema=ON",
+      ]
+    volumes:
+      - mysql-day3-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql-day2-data:
+  mysql-day3-data:
