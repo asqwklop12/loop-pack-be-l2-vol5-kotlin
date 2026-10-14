@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional
 @Component
 class ProductService(
     private val productRepository: ProductRepository,
+    private val productSearchCache: ProductSearchCache,
 ) {
     /**
      * 재고는 생성에서 받지 않는다. 항상 0 으로 시작하고 재고 변경으로만 바꾼다.
@@ -42,8 +43,38 @@ class ProductService(
     @Transactional
     fun suspendAllByBrand(brandId: Long): Int = productRepository.suspendAllByBrandId(brandId)
 
+    /**
+     * 인기순만 캐시를 거친다. 다른 정렬은 `price`·`created_at` 이 저장된 컬럼이라
+     * 인덱스가 순서를 들고 있고, 캐시를 둘 이유가 없다.
+     */
     @Transactional(readOnly = true)
-    fun search(search: ProductSearch): List<Product> = productRepository.search(search)
+    fun search(search: ProductSearch): List<Product> {
+        if (search.sort != ProductSort.LIKES_DESC) return productRepository.search(search)
+
+        productSearchCache.find(search)?.let { return orderedBy(it) }
+
+        return productRepository.search(search)
+            .also { productSearchCache.put(search, it.map { product -> product.id }) }
+    }
+
+    /**
+     * 캐시가 준 순서대로 상품을 돌려준다.
+     *
+     * 담아둔 것은 id 뿐이라 상품을 다시 읽는다. 그 사이 **삭제되거나 판매중지된 상품은 뺀다** —
+     * 목록은 판매 중인 상품만 보여주기로 한 계약이고, 지난 순위를 쓰더라도 그 계약은 지킨다.
+     * 그래서 한 페이지가 요청한 크기보다 짧아질 수 있다.
+     *
+     * `findAllByIds` 는 순서를 보장하지 않으므로 캐시의 순서로 다시 세운다.
+     */
+    private fun orderedBy(productIds: List<Long>): List<Product> {
+        if (productIds.isEmpty()) return emptyList()
+
+        val byId = productRepository.findAllByIds(productIds)
+            .filter { it.isSellable() }
+            .associateBy { it.id }
+
+        return productIds.mapNotNull { byId[it] }
+    }
 
     @Transactional(readOnly = true)
     fun countBy(brandId: Long?): Long = productRepository.countBy(brandId)
