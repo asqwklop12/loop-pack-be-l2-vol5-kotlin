@@ -10,11 +10,27 @@ import jakarta.persistence.Embedded
 import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
+import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.Version
 
+/**
+ * 목록 조회가 쓰는 인덱스를 함께 선언한다.
+ *
+ * `brand_id` 가 앞인 이유는 등호로 거르는 조건이기 때문이다. 한 값으로 고정되면
+ * 그 블록 안에서 `price` 가 이미 정렬된 상태로 읽혀 정렬이 공짜가 된다.
+ * 순서를 뒤집으면 가격순으로 전역 정렬되어 특정 브랜드 행이 흩어진다.
+ *
+ * `status` 와 `deleted_at` 은 넣지 않는다. 거르는 양이 적어 인덱스만 넓어진다.
+ */
 @Entity
-@Table(name = "product")
+@Table(
+    name = "product",
+    indexes = [
+        Index(name = "idx_product_brand", columnList = "brand_id"),
+        Index(name = "idx_product_brand_price", columnList = "brand_id, price"),
+    ],
+)
 class Product(
     brandId: Long,
     name: String,
