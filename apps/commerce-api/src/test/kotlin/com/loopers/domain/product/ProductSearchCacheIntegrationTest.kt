@@ -13,8 +13,16 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.clearInvocations
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * 인기순 목록의 캐시 동작.
@@ -33,10 +41,15 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
     private val databaseCleanUp: DatabaseCleanUp,
     private val redisCleanUp: RedisCleanUp,
 ) {
+    /** 집계 쿼리가 몇 번 도는지 세려고 감싼다. 동작은 그대로 둔다. */
+    @MockitoSpyBean
+    private lateinit var productRepository: ProductRepository
+
     @AfterEach
     fun tearDown() {
         databaseCleanUp.truncateAllTables()
         redisCleanUp.truncateAll()
+        clearInvocations(productRepository)
     }
 
     private val likesDesc = ProductSearch(sort = ProductSort.LIKES_DESC)
@@ -208,6 +221,68 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
             productService.search(wider)
 
             assertThat(productSearchCache.findTop(ProductSort.LIKES_DESC, null)).isNull()
+        }
+    }
+
+    /**
+     * TTL 이 끝나는 순간 들어온 요청이 전부 같은 집계 쿼리를 도는 것을 막는다.
+     * 측정에서 41개가 동시에 돌아 혼자면 2.6초인 쿼리가 각각 20초가 됐다.
+     */
+    @DisplayName("캐시가 비어 있을 때 여러 요청이 동시에 들어와도, ")
+    @Nested
+    inner class RefillLock {
+        @DisplayName("비싼 집계 쿼리는 한 번만 돈다.")
+        @Test
+        fun loadsOriginOnlyOnce() {
+            val brand = savedBrand()
+            val products = (1..3).map { savedProduct(brand.id, "상품$it") }
+            products.forEachIndexed { i, p -> liked(p.id, 3 - i) }
+
+            val results = inParallel(threads = THREADS) { productService.search(likesDesc).map { it.id } }
+
+            // 대기한 쪽도 findAllByIds 는 돌기 때문에 전체 쿼리 수로는 갈리지 않는다.
+            // 락이 막는 것은 집계 쿼리뿐이므로 그것만 센다.
+            verify(productRepository, times(1)).search(any())
+            assertThat(results).allSatisfy { assertThat(it).isEqualTo(products.map { p -> p.id }) }
+        }
+
+        @DisplayName("채우던 쪽이 끝내지 못해도, 기다리다 직접 읽어서 답한다.")
+        @Test
+        fun fallsBackWhenRefillNeverFinishes() {
+            val brand = savedBrand()
+            val product = savedProduct(brand.id, "에어맥스")
+            liked(product.id, 1)
+
+            // 아무도 풀지 않는 잠금을 미리 잡아 둔다.
+            assertThat(productSearchCache.tryStartRefill(ProductSort.LIKES_DESC, null)).isTrue()
+
+            assertThat(productService.search(likesDesc).map { it.id }).containsExactly(product.id)
+        }
+    }
+
+    private companion object {
+        /** 만료 순간에 몰리는 요청을 흉내 내는 수. */
+        const val THREADS = 10
+    }
+
+    private fun <T> inParallel(threads: Int, block: () -> T): List<T> {
+        val ready = CountDownLatch(threads)
+        val go = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(threads)
+
+        return try {
+            val futures = (1..threads).map {
+                pool.submit<T> {
+                    ready.countDown()
+                    go.await()
+                    block()
+                }
+            }
+            ready.await(10, TimeUnit.SECONDS)
+            go.countDown()
+            futures.map { it.get(30, TimeUnit.SECONDS) }
+        } finally {
+            pool.shutdownNow()
         }
     }
 

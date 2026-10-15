@@ -1,5 +1,7 @@
 package com.loopers.domain.product
 
+import java.time.Duration
+
 /**
  * 인기순 **상위 [CACHED_RANKS] 위의 순서만** 담는다. 상품 내용은 담지 않는다.
  *
@@ -28,6 +30,17 @@ interface ProductSearchCache {
     /** 해당 `(정렬, 브랜드)` 의 캐시를 버린다. */
     fun evict(sort: ProductSort, brandId: Long?)
 
+    /**
+     * 재채움 권한을 얻는다. 얻은 쪽만 DB 를 읽고 나머지는 그 결과를 기다린다.
+     *
+     * **정확성을 위한 락이 아니다.** 실패하거나 겹쳐도 몇 개가 더 읽을 뿐이고, 그래도
+     * 아무것도 없을 때(41개가 동시에 같은 집계 쿼리를 도는 것)보다 낫다. 그래서 해제도
+     * 토큰 비교 없이 지운다 — 엄밀함을 위해 Lua 를 쓸 값어치가 없다.
+     */
+    fun tryStartRefill(sort: ProductSort, brandId: Long?): Boolean
+
+    fun finishRefill(sort: ProductSort, brandId: Long?)
+
     companion object {
         /**
          * 담아 두는 순위의 개수. 이 범위를 넘는 요청(뒤 페이지, 더 큰 size)은 캐시를 거치지 않는다.
@@ -36,5 +49,14 @@ interface ProductSearchCache {
          * 담는 양이 같이 커지므로 기본 페이지 크기에 맞춰 둔다.
          */
         const val CACHED_RANKS = 20
+
+        /**
+         * 재채움을 기다리는 시간의 상한. 넘으면 기다리기를 포기하고 직접 DB 를 읽는다.
+         * 기다리다 실패하느니 느려도 답하는 쪽이 낫다.
+         */
+        val REFILL_WAIT: Duration = Duration.ofSeconds(5)
+
+        /** 기다리는 동안 캐시를 다시 보는 간격. */
+        val REFILL_POLL: Duration = Duration.ofMillis(50)
     }
 }

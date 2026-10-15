@@ -46,6 +46,24 @@ class ProductSearchRedisCache(
     }
 
     /**
+     * `SET NX EX` 하나로 끝난다. 키가 없을 때만 잡히고, 잡은 쪽이 죽어도
+     * [LOCK_TTL] 이 지나면 풀린다.
+     *
+     * Redis 가 죽었으면 **잡은 것으로 친다.** 못 잡은 것으로 치면 모두가 기다리다
+     * 타임아웃을 맞는다. 캐시가 없는 상황이니 그냥 DB 로 가는 편이 맞다.
+     */
+    override fun tryStartRefill(sort: ProductSort, brandId: Long?): Boolean =
+        runCatching {
+            redisTemplate.opsForValue().setIfAbsent(lockKeyOf(sort, brandId), LOCKED, LOCK_TTL) == true
+        }.onFailure { logFailure("재채움 잠금", it) }
+            .getOrDefault(true)
+
+    override fun finishRefill(sort: ProductSort, brandId: Long?) {
+        runCatching { redisTemplate.delete(lockKeyOf(sort, brandId)) }
+            .onFailure { logFailure("재채움 잠금 해제", it) }
+    }
+
+    /**
      * 키는 `(정렬, 브랜드)` 로만 갈린다. `page` 와 `size` 는 들어가지 않는다 — 상위
      * [ProductSearchCache.CACHED_RANKS] 개를 한 덩어리로 담고 호출자가 잘라 쓰기 때문이다.
      *
@@ -53,6 +71,8 @@ class ProductSearchRedisCache(
      */
     private fun keyOf(sort: ProductSort, brandId: Long?): String =
         "product:search:${sort.value}:brand=${brandId ?: ALL_BRANDS}"
+
+    private fun lockKeyOf(sort: ProductSort, brandId: Long?): String = "${keyOf(sort, brandId)}:refill"
 
     /**
      * 원인까지 남긴다. 메시지만 남기면 `Redis exception` 한 줄로 끝나 무엇이 끊겼는지 알 수 없다.
@@ -87,5 +107,12 @@ class ProductSearchRedisCache(
         private val TTL: Duration = Duration.ofMinutes(5)
         private const val DELIMITER = ","
         private const val ALL_BRANDS = "all"
+
+        /**
+         * 재채움 잠금의 수명. 혼자 도는 집계 쿼리는 2~3초면 끝나므로 넉넉하다.
+         * 잡은 쪽이 죽어도 이 시간이 지나면 다른 요청이 다시 잡는다.
+         */
+        private val LOCK_TTL: Duration = Duration.ofSeconds(10)
+        private const val LOCKED = "1"
     }
 }

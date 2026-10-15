@@ -59,11 +59,47 @@ class ProductService(
         productSearchCache.findTop(search.sort, search.brandId)
             ?.let { return orderedBy(it.sliceOf(search)) }
 
-        // 미스일 때는 방금 읽은 상품을 그대로 쓴다. id 를 담아 두고 다시 읽으면 쿼리가 하나 는다.
-        val top = loadTopRanked(search.brandId)
-        productSearchCache.putTop(search.sort, search.brandId, top.map { it.id })
+        if (!productSearchCache.tryStartRefill(search.sort, search.brandId)) {
+            return awaitRefill(search)
+        }
 
-        return top.sliceOf(search)
+        try {
+            // 미스일 때는 방금 읽은 상품을 그대로 쓴다. id 를 담아 두고 다시 읽으면 쿼리가 하나 는다.
+            val top = loadTopRanked(search.brandId)
+            productSearchCache.putTop(search.sort, search.brandId, top.map { it.id })
+
+            return top.sliceOf(search)
+        } finally {
+            productSearchCache.finishRefill(search.sort, search.brandId)
+        }
+    }
+
+    /**
+     * 다른 요청이 채우는 중이면 그 결과를 기다린다. 만료 순간에 들어온 요청이 전부
+     * 같은 집계 쿼리를 도는 것을 막는다 — 측정에서 41개가 동시에 돌아 각각 20초가 됐다.
+     *
+     * 기다려도 안 나오면 **직접 읽는다.** 채우던 쪽이 죽었을 수도 있고, 기다리다
+     * 실패하느니 느려도 답하는 편이 낫다.
+     *
+     * 기다리는 동안 DB 커넥션을 쥐고 있지 않다. 이 지점까지 DB 를 한 번도 부르지 않아
+     * 트랜잭션이 커넥션을 아직 얻지 않았다.
+     */
+    private fun awaitRefill(search: ProductSearch): List<Product> {
+        val deadline = System.nanoTime() + ProductSearchCache.REFILL_WAIT.toNanos()
+
+        while (System.nanoTime() < deadline) {
+            productSearchCache.findTop(search.sort, search.brandId)
+                ?.let { return orderedBy(it.sliceOf(search)) }
+
+            try {
+                Thread.sleep(ProductSearchCache.REFILL_POLL.toMillis())
+            } catch (interrupted: InterruptedException) {
+                Thread.currentThread().interrupt()
+                break
+            }
+        }
+
+        return loadTopRanked(search.brandId).sliceOf(search)
     }
 
     private fun <T> List<T>.sliceOf(search: ProductSearch): List<T> =
