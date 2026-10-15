@@ -51,8 +51,20 @@ class ProductSearchRedisCache(
     private fun keyOf(search: ProductSearch): String =
         "product:search:${search.sort.value}:brand=${search.brandId ?: "all"}:page=${search.page}:size=${search.size}"
 
+    /**
+     * 원인까지 남긴다. 메시지만 남기면 `Redis exception` 한 줄로 끝나 무엇이 끊겼는지 알 수 없다.
+     * 끊긴 동안 요청마다 찍히므로 `warn` 으로 두되 스택은 가장 안쪽 원인만 적는다.
+     */
     private fun logFailure(what: String, cause: Throwable) {
-        log.warn("상품 목록 캐시 {} 실패. DB 로 우회한다. [{}]", what, cause.message)
+        val root = generateSequence(cause) { it.cause }.last()
+        log.warn(
+            "상품 목록 캐시 {} 실패. DB 로 우회한다. [{}: {}] <- [{}: {}]",
+            what,
+            cause::class.simpleName,
+            cause.message,
+            root::class.simpleName,
+            root.message,
+        )
     }
 
     companion object {
