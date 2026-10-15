@@ -21,13 +21,15 @@ import jakarta.persistence.Version
  * 그 블록 안에서 `price` 가 이미 정렬된 상태로 읽혀 정렬이 공짜가 된다.
  * 순서를 뒤집으면 가격순으로 전역 정렬되어 특정 브랜드 행이 흩어진다.
  *
- * `status` 와 `deleted_at` 은 넣지 않는다. 거르는 양이 적어 인덱스만 넓어진다.
+ * `brand_id` 단독 인덱스는 두지 않는다. 이 인덱스의 선두가 `brand_id` 라
+ * 브랜드만으로 거르는 조회도 여기서 처리된다.
+ *
+ * `status` 와 `deleted_at` 도 넣지 않는다. 거르는 양이 적어 인덱스만 넓어진다.
  */
 @Entity
 @Table(
     name = "product",
     indexes = [
-        Index(name = "idx_product_brand", columnList = "brand_id"),
         Index(name = "idx_product_brand_price", columnList = "brand_id, price"),
     ],
 )
