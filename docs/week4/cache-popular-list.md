@@ -218,7 +218,7 @@ Redis 를 다시 올리고 `PING` 에 `PONG` 이 오고 복제도 정상(`master
 | | |
 | --- | --- |
 | 데이터 | day1 — 상품 1,000,000 · 좋아요 1,985,744 ([data-timeline.md](data-timeline.md)) |
-| 인덱스 | `product (brand_id)` · `product (brand_id, price)` · `product_like (product_id)` |
+| 인덱스 | `product (brand_id, price)` · `product_like (product_id)` · `product_like (user_id, product_id)` UNIQUE |
 | 버퍼 풀 | 128MB (데이터 200MB 이상) |
 | 커넥션 풀 | 40 |
 | 부하 | `docs/week4/k6-popular-list.js` |

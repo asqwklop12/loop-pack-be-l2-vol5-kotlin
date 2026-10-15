@@ -42,7 +42,8 @@ ORDER BY COUNT(l.id) DESC, id DESC     -- likes_desc
 캐시가 끼면 "지난 순위" 가 섞이므로 **요청마다 Redis 를 비웠다.** 비교 대상이
 DB 가 돌려준 결과만 되도록 한다.
 
-뗀 인덱스 — `idx_product_brand` · `idx_product_brand_price` · `idx_like_product`.
+뗀 인덱스 — `idx_product_brand` · `idx_product_brand_price` · `idx_like_product`
+(측정 시점에는 단독 인덱스가 아직 있었다).
 `uk_like_user_product` 는 성능 인덱스가 아니라 불변식이므로 남겼다.
 
 ## 4. 결과 — 8개 전부 일치
@@ -88,11 +89,11 @@ offset 이 커질 때 순서가 어긋나면 가장 먼저 드러나는 자리�
 | 테이블 | 인덱스 | 컬럼 | |
 | --- | --- | --- | --- |
 | `product` | `PRIMARY` | `id` | UNIQUE |
-| `product` | `idx_product_brand` | `brand_id` | 복합의 선두에 포함 — 비교용 |
 | `product` | `idx_product_brand_price` | `brand_id`, `price` | 목록 조회가 쓰는 것 |
 | `product_like` | `PRIMARY` | `id` | UNIQUE |
 | `product_like` | `uk_like_user_product` | `user_id`, `product_id` | UNIQUE — 중복 좋아요 방지 |
 | `product_like` | `idx_like_product` | `product_id` | 좋아요 수 집계 |
 
-`idx_product_brand` 는 `idx_product_brand_price` 의 선두에 포함되므로 중복이다.
-두 구성을 비교하는 동안만 함께 둔다.
+`idx_product_brand`(단독)는 비교를 마친 뒤 제거했다. `idx_product_brand_price` 의
+선두가 `brand_id` 라 브랜드만으로 거르는 조회도 복합 인덱스가 처리한다.
+인덱스 21MB 와 쓰기마다 드는 갱신 비용을 아낀다.
