@@ -48,8 +48,14 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
             Product(brandId = brandId, name = name, price = Money(10_000), stock = Stock(5)),
         )
 
+    /**
+     * 사용자 번호는 계속 올라간다. 같은 상품에 두 번 부르면 `uk_like_user_product` 에 걸리므로
+     * 호출마다 1 부터 다시 매기지 않는다.
+     */
+    private var userSeq = 0L
+
     private fun liked(productId: Long, times: Int) {
-        repeat(times) { likeJpaRepository.save(Like(userId = it + 1L, productId = productId)) }
+        repeat(times) { likeJpaRepository.save(Like(userId = ++userSeq, productId = productId)) }
     }
 
     @DisplayName("인기순을 조회할 때, ")
