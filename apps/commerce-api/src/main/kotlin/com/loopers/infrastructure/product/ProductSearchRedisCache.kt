@@ -74,10 +74,17 @@ class ProductSearchRedisCache(
         private val log = LoggerFactory.getLogger(ProductSearchRedisCache::class.java)
 
         /**
-         * 좋아요는 계속 들어오므로 순위도 계속 바뀐다. 무효화로 따라가면 좋아요마다 캐시를 버려야 해
-         * 캐시가 거의 비어 있게 된다. 대신 **얼마나 지난 순위까지 보여줄지**를 이 값으로 정한다.
+         * **얼마나 지난 순위까지 보여줄지.** 무효화를 걸지 않기로 했으므로 이 값 하나가
+         * 신선도 정책 전부다.
+         *
+         * 인기순은 본래 지난 값이다 — "지금 이 순간 가장 많이 눌린 순서" 가 아니라
+         * "요즘 인기 있는 것" 을 보여주는 화면이다. 좋아요 하나가 순위에 바로 반영되지
+         * 않아도 사용자가 손해 볼 것이 없다.
+         *
+         * 그래서 짧게 잡을 이유가 없다. 길수록 적중률이 오르고, 만료가 드물어져
+         * 미스가 몰리는 순간도 그만큼 덜 생긴다.
          */
-        private val TTL: Duration = Duration.ofSeconds(60)
+        private val TTL: Duration = Duration.ofMinutes(5)
         private const val DELIMITER = ","
         private const val ALL_BRANDS = "all"
     }
