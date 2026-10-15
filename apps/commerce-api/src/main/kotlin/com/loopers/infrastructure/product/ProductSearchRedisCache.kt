@@ -1,14 +1,14 @@
 package com.loopers.infrastructure.product
 
-import com.loopers.domain.product.ProductSearch
 import com.loopers.domain.product.ProductSearchCache
+import com.loopers.domain.product.ProductSort
 import org.slf4j.LoggerFactory
 import org.springframework.data.redis.core.RedisTemplate
 import org.springframework.stereotype.Component
 import java.time.Duration
 
 /**
- * 정렬 결과를 Redis 에 담는다. 값은 상품 id 를 쉼표로 이은 문자열이다.
+ * 상위 순위를 Redis 에 담는다. 값은 상품 id 를 쉼표로 이은 문자열이다.
  *
  * `RedisConfig` 의 직렬화가 문자열이라 그대로 맞춘다. JSON 으로 감싸면 바이트만 늘고
  * 담는 것이 숫자 목록뿐이라 얻는 것이 없다.
@@ -20,8 +20,8 @@ import java.time.Duration
 class ProductSearchRedisCache(
     private val redisTemplate: RedisTemplate<String, String>,
 ) : ProductSearchCache {
-    override fun find(search: ProductSearch): List<Long>? {
-        val raw = runCatching { redisTemplate.opsForValue().get(keyOf(search)) }
+    override fun findTop(sort: ProductSort, brandId: Long?): List<Long>? {
+        val raw = runCatching { redisTemplate.opsForValue().get(keyOf(sort, brandId)) }
             .onFailure { logFailure("조회", it) }
             .getOrNull()
             ?: return null
@@ -33,23 +33,26 @@ class ProductSearchRedisCache(
             .getOrNull()
     }
 
-    override fun put(search: ProductSearch, productIds: List<Long>) {
+    override fun putTop(sort: ProductSort, brandId: Long?, productIds: List<Long>) {
         runCatching {
-            redisTemplate.opsForValue().set(keyOf(search), productIds.joinToString(DELIMITER), TTL)
+            redisTemplate.opsForValue()
+                .set(keyOf(sort, brandId), productIds.joinToString(DELIMITER), TTL)
         }.onFailure { logFailure("저장", it) }
     }
 
-    override fun evict(search: ProductSearch) {
-        runCatching { redisTemplate.delete(keyOf(search)) }
+    override fun evict(sort: ProductSort, brandId: Long?) {
+        runCatching { redisTemplate.delete(keyOf(sort, brandId)) }
             .onFailure { logFailure("삭제", it) }
     }
 
     /**
-     * 조건이 하나라도 다르면 결과가 다르므로 키도 달라야 한다.
-     * 브랜드를 주지 않은 전체 목록은 `all` 로 둔다 — `null` 을 문자열로 쓰면 브랜드명과 겹칠 수 있다.
+     * 키는 `(정렬, 브랜드)` 로만 갈린다. `page` 와 `size` 는 들어가지 않는다 — 상위
+     * [ProductSearchCache.CACHED_RANKS] 개를 한 덩어리로 담고 호출자가 잘라 쓰기 때문이다.
+     *
+     * 브랜드를 주지 않은 전체 목록은 `all` 로 둔다. `null` 을 문자열로 쓰면 브랜드명과 겹칠 수 있다.
      */
-    private fun keyOf(search: ProductSearch): String =
-        "product:search:${search.sort.value}:brand=${search.brandId ?: "all"}:page=${search.page}:size=${search.size}"
+    private fun keyOf(sort: ProductSort, brandId: Long?): String =
+        "product:search:${sort.value}:brand=${brandId ?: ALL_BRANDS}"
 
     /**
      * 원인까지 남긴다. 메시지만 남기면 `Redis exception` 한 줄로 끝나 무엇이 끊겼는지 알 수 없다.
@@ -76,5 +79,6 @@ class ProductSearchRedisCache(
          */
         private val TTL: Duration = Duration.ofSeconds(60)
         private const val DELIMITER = ","
+        private const val ALL_BRANDS = "all"
     }
 }

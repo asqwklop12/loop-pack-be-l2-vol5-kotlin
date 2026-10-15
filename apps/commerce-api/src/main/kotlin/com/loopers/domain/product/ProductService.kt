@@ -44,18 +44,49 @@ class ProductService(
     fun suspendAllByBrand(brandId: Long): Int = productRepository.suspendAllByBrandId(brandId)
 
     /**
-     * 인기순만 캐시를 거친다. 다른 정렬은 `price`·`created_at` 이 저장된 컬럼이라
-     * 인덱스가 순서를 들고 있고, 캐시를 둘 이유가 없다.
+     * 인기순의 **상위 구간만** 캐시를 거친다.
+     *
+     * 다른 정렬은 `price`·`created_at` 이 저장된 컬럼이라 인덱스가 순서를 들고 있고,
+     * 캐시를 둘 이유가 없다. 인기순이라도 캐시가 담은 순위를 넘는 요청(뒤 페이지,
+     * 더 큰 `size`)은 그대로 DB 로 보낸다. 담지 않은 구간을 캐시로 답할 수는 없다.
      */
     @Transactional(readOnly = true)
     fun search(search: ProductSearch): List<Product> {
-        if (search.sort != ProductSort.LIKES_DESC) return productRepository.search(search)
+        if (search.sort != ProductSort.LIKES_DESC || !coveredByCache(search)) {
+            return productRepository.search(search)
+        }
 
-        productSearchCache.find(search)?.let { return orderedBy(it) }
+        productSearchCache.findTop(search.sort, search.brandId)
+            ?.let { return orderedBy(it.sliceOf(search)) }
 
-        return productRepository.search(search)
-            .also { productSearchCache.put(search, it.map { product -> product.id }) }
+        // 미스일 때는 방금 읽은 상품을 그대로 쓴다. id 를 담아 두고 다시 읽으면 쿼리가 하나 는다.
+        val top = loadTopRanked(search.brandId)
+        productSearchCache.putTop(search.sort, search.brandId, top.map { it.id })
+
+        return top.sliceOf(search)
     }
+
+    private fun <T> List<T>.sliceOf(search: ProductSearch): List<T> =
+        drop(search.offset.toInt()).take(search.size)
+
+    /** 요청한 구간이 캐시가 담은 순위 안에 들어오는가. */
+    private fun coveredByCache(search: ProductSearch): Boolean =
+        search.offset + search.size <= ProductSearchCache.CACHED_RANKS
+
+    /**
+     * **요청한 만큼이 아니라 캐시가 담을 만큼**을 읽는다.
+     * `size=5` 로 들어온 요청 때문에 5개짜리를 담아 두면, 뒤이은 `size=20` 요청이
+     * 모자란 목록을 받는다.
+     */
+    private fun loadTopRanked(brandId: Long?): List<Product> =
+        productRepository.search(
+            ProductSearch(
+                brandId = brandId,
+                sort = ProductSort.LIKES_DESC,
+                page = ProductSearch.DEFAULT_PAGE,
+                size = ProductSearchCache.CACHED_RANKS,
+            ),
+        )
 
     /**
      * 캐시가 준 순서대로 상품을 돌려준다.

@@ -70,12 +70,12 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
             liked(few.id, 1)
             liked(many.id, 3)
 
-            assertThat(productSearchCache.find(likesDesc)).isNull()
+            assertThat(productSearchCache.findTop(ProductSort.LIKES_DESC, null)).isNull()
 
             val result = productService.search(likesDesc)
 
             assertThat(result.map { it.id }).containsExactly(many.id, few.id)
-            assertThat(productSearchCache.find(likesDesc)).containsExactly(many.id, few.id)
+            assertThat(productSearchCache.findTop(ProductSort.LIKES_DESC, null)).containsExactly(many.id, few.id)
         }
 
         @DisplayName("캐시가 있으면, 좋아요가 뒤집혀도 담아둔 순서로 반환한다.")
@@ -108,7 +108,7 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
             productService.search(likesDesc)
 
             liked(second.id, 10)
-            productSearchCache.evict(likesDesc)
+            productSearchCache.evict(ProductSort.LIKES_DESC, null)
 
             assertThat(productService.search(likesDesc).map { it.id })
                 .containsExactly(second.id, first.id)
@@ -157,8 +157,57 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
             val nikeOnly = ProductSearch(brandId = nike.id, sort = ProductSort.LIKES_DESC)
             productService.search(nikeOnly)
 
-            assertThat(productSearchCache.find(nikeOnly)).containsExactly(nikeProduct.id)
-            assertThat(productSearchCache.find(likesDesc)).isNull()
+            assertThat(productSearchCache.findTop(ProductSort.LIKES_DESC, nike.id)).containsExactly(nikeProduct.id)
+            assertThat(productSearchCache.findTop(ProductSort.LIKES_DESC, null)).isNull()
+        }
+    }
+
+    /**
+     * 캐시는 상위 [ProductSearchCache.CACHED_RANKS] 위만 담는다.
+     * 그 범위를 벗어나는 요청은 담지 않은 구간이므로 캐시로 답할 수 없다.
+     */
+    @DisplayName("캐시가 담은 순위를 기준으로, ")
+    @Nested
+    inner class CachedWindow {
+        @DisplayName("안쪽 요청은 캐시에서 잘라 쓰고, 담기는 것은 상위 전체다.")
+        @Test
+        fun slicesFromCachedTop() {
+            val brand = savedBrand()
+            val products = (1..5).map { savedProduct(brand.id, "상품$it") }
+            products.forEachIndexed { i, p -> liked(p.id, 5 - i) }
+
+            val firstTwo = productService.search(ProductSearch(sort = ProductSort.LIKES_DESC, page = 0, size = 2))
+
+            assertThat(firstTwo.map { it.id }).containsExactly(products[0].id, products[1].id)
+            // size=2 로 들어왔어도 담기는 것은 상위 전체여야 한다. 5개뿐이라 5개가 담긴다.
+            assertThat(productSearchCache.findTop(ProductSort.LIKES_DESC, null))
+                .containsExactly(*products.map { it.id }.toTypedArray())
+        }
+
+        @DisplayName("담은 순위를 넘는 뒤 페이지는, 캐시를 거치지 않는다.")
+        @Test
+        fun skipsCacheBeyondCachedRanks() {
+            val brand = savedBrand()
+            val product = savedProduct(brand.id, "에어맥스")
+            liked(product.id, 1)
+
+            val beyond = ProductSearch(sort = ProductSort.LIKES_DESC, page = 1, size = ProductSearchCache.CACHED_RANKS)
+            productService.search(beyond)
+
+            assertThat(productSearchCache.findTop(ProductSort.LIKES_DESC, null)).isNull()
+        }
+
+        @DisplayName("담은 순위보다 큰 size 요청도, 캐시를 거치지 않는다.")
+        @Test
+        fun skipsCacheForLargerSize() {
+            val brand = savedBrand()
+            val product = savedProduct(brand.id, "에어맥스")
+            liked(product.id, 1)
+
+            val wider = ProductSearch(sort = ProductSort.LIKES_DESC, size = ProductSearchCache.CACHED_RANKS + 1)
+            productService.search(wider)
+
+            assertThat(productSearchCache.findTop(ProductSort.LIKES_DESC, null)).isNull()
         }
     }
 
@@ -173,7 +222,7 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
 
             productService.search(search)
 
-            assertThat(productSearchCache.find(search)).isNull()
+            assertThat(productSearchCache.findTop(sort, null)).isNull()
         }
     }
 }
