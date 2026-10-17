@@ -7,6 +7,7 @@ import java.time.Duration
 data class PgSimulatorProperties(
     val callbackUrl: String,
     val callbackDelay: Duration = Duration.ofSeconds(3),
+    val slowCardDelay: Duration = Duration.ofSeconds(10),
     val declineRate: Double = 0.0,
     val callbackDropRate: Double = 0.0,
 )

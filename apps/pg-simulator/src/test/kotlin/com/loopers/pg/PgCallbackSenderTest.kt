@@ -58,8 +58,16 @@ class PgCallbackSenderTest {
         store = store,
     )
 
-    private fun acceptedKey(orderId: Long) =
-        store.accept(orderId, amount, Instant.now()).transaction.transactionKey
+    private fun acceptedKey(orderId: Long, cardNo: String = "1234-5678-9814-1451") =
+        store.accept(
+            PgTransactionStore.Accept(
+                orderId = orderId,
+                amount = amount,
+                cardType = CardType.SAMSUNG,
+                cardNo = cardNo,
+                at = Instant.now(),
+            ),
+        ).transaction.transactionKey
 
     @DisplayName("지연이 지나면 거래를 확정하고 콜백을 보낸다.")
     @Test
@@ -121,6 +129,49 @@ class PgCallbackSenderTest {
         assertAll(
             { assertThat(received).hasSize(1) },
             { assertThat(store.find(key)?.status).isEqualTo(PgStatus.SUCCESS) },
+        )
+    }
+
+    @DisplayName("한도초과 카드는 거절되고 거절 사유가 콜백에 담긴다.")
+    @Test
+    fun declinesTestCard() {
+        val key = acceptedKey(5L, cardNo = "1234-5678-9814-0000")
+
+        sender().scheduleSettlement(key)
+
+        assertThat(arrived.await(5, TimeUnit.SECONDS)).isTrue()
+        assertAll(
+            { assertThat(received.first()["status"]).isEqualTo("FAILED") },
+            { assertThat(received.first()["declineReason"]).isEqualTo("한도초과") },
+            { assertThat(store.find(key)?.status).isEqualTo(PgStatus.FAILED) },
+        )
+    }
+
+    @DisplayName("콜백 유실 카드는 확정은 되지만 콜백이 오지 않는다.")
+    @Test
+    fun dropsCallbackForSilentCard() {
+        val key = acceptedKey(6L, cardNo = "1234-5678-9814-2222")
+
+        sender().scheduleSettlement(key)
+
+        assertAll(
+            { assertThat(arrived.await(1, TimeUnit.SECONDS)).isFalse() },
+            { assertThat(received).isEmpty() },
+            { assertThat(store.find(key)?.status).isEqualTo(PgStatus.SUCCESS) },
+        )
+    }
+
+    @DisplayName("테스트 카드가 아니면 확률 설정을 따른다.")
+    @Test
+    fun fallsBackToRate() {
+        val key = acceptedKey(7L)
+
+        sender(declineRate = 1.0).scheduleSettlement(key)
+
+        assertThat(arrived.await(5, TimeUnit.SECONDS)).isTrue()
+        assertAll(
+            { assertThat(received.first()["status"]).isEqualTo("FAILED") },
+            { assertThat(received.first()["declineReason"]).isEqualTo("승인거절") },
         )
     }
 

@@ -23,12 +23,20 @@ class PgV1ApiE2ETest @Autowired constructor(
 ) {
     private val amount: BigInteger = BigInteger.valueOf(50_000)
 
-    private fun request(orderId: Long, amount: BigInteger = this.amount) =
-        testRestTemplate.postForEntity(
-            "/api/v1/payments",
-            PgV1Dto.PaymentRequest(orderId = orderId, amount = amount),
-            PgV1Dto.PaymentResponse::class.java,
-        )
+    private fun request(
+        orderId: Long,
+        amount: BigInteger = this.amount,
+        cardNo: String = "1234-5678-9814-1451",
+    ) = testRestTemplate.postForEntity(
+        "/api/v1/payments",
+        PgV1Dto.PaymentRequest(
+            orderId = orderId,
+            amount = amount,
+            cardType = CardType.SAMSUNG,
+            cardNo = cardNo,
+        ),
+        PgV1Dto.PaymentResponse::class.java,
+    )
 
     @DisplayName("POST /api/v1/payments")
     @Nested
@@ -45,6 +53,8 @@ class PgV1ApiE2ETest @Autowired constructor(
                 { assertThat(response.body?.amount).isEqualTo(amount) },
                 { assertThat(response.body?.transactionKey).isNotBlank() },
                 { assertThat(response.body?.settledAt).isNull() },
+                { assertThat(response.body?.cardType).isEqualTo(CardType.SAMSUNG) },
+                { assertThat(response.body?.maskedCardNo).isEqualTo("****-****-****-1451") },
             )
         }
 
@@ -60,12 +70,54 @@ class PgV1ApiE2ETest @Autowired constructor(
             )
         }
 
+        @DisplayName("카드번호가 짧으면 거절한다.")
+        @Test
+        fun rejectsMalformedCardNo() {
+            val response = testRestTemplate.postForEntity(
+                "/api/v1/payments",
+                PgV1Dto.PaymentRequest(
+                    orderId = 1004L,
+                    amount = amount,
+                    cardType = CardType.SAMSUNG,
+                    cardNo = "1234",
+                ),
+                String::class.java,
+            )
+
+            assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST)
+        }
+
+        @DisplayName("응답에 카드번호 원본이 들어가지 않는다.")
+        @Test
+        fun neverEchoesFullCardNo() {
+            val body = testRestTemplate.postForEntity(
+                "/api/v1/payments",
+                PgV1Dto.PaymentRequest(
+                    orderId = 1005L,
+                    amount = amount,
+                    cardType = CardType.SAMSUNG,
+                    cardNo = "1234-5678-9814-1451",
+                ),
+                String::class.java,
+            ).body
+
+            assertAll(
+                { assertThat(body).doesNotContain("1234-5678") },
+                { assertThat(body).contains("****-****-****-1451") },
+            )
+        }
+
         @DisplayName("확정되지 않은 거래의 응답에는 settledAt 키가 들어가지 않는다.")
         @Test
         fun omitsNullFields() {
             val body = testRestTemplate.postForEntity(
                 "/api/v1/payments",
-                PgV1Dto.PaymentRequest(orderId = 1003L, amount = amount),
+                PgV1Dto.PaymentRequest(
+                    orderId = 1003L,
+                    amount = amount,
+                    cardType = CardType.SAMSUNG,
+                    cardNo = "1234-5678-9814-1451",
+                ),
                 String::class.java,
             ).body
 

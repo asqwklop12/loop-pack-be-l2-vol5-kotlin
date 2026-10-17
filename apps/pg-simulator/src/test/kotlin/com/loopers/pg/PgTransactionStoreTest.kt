@@ -17,13 +17,27 @@ class PgTransactionStoreTest {
     private val now: Instant = Instant.parse("2026-10-18T00:00:00Z")
     private val amount: BigInteger = BigInteger.valueOf(50_000)
 
+    private fun accept(
+        orderId: Long,
+        at: Instant = now,
+        cardNo: String = "1234-5678-9814-1451",
+    ) = store.accept(
+        PgTransactionStore.Accept(
+            orderId = orderId,
+            amount = amount,
+            cardType = CardType.SAMSUNG,
+            cardNo = cardNo,
+            at = at,
+        ),
+    )
+
     @DisplayName("접수할 때,")
     @Nested
     inner class Accept {
         @DisplayName("처음 접수한 주문은 PENDING 거래로 새로 생긴다.")
         @Test
         fun createsPendingTransaction() {
-            val accepted = store.accept(orderId = 1L, amount = amount, at = now)
+            val accepted = accept(orderId = 1L)
 
             assertAll(
                 { assertThat(accepted.isNew).isTrue() },
@@ -33,14 +47,15 @@ class PgTransactionStoreTest {
                 { assertThat(accepted.transaction.requestedAt).isEqualTo(now) },
                 { assertThat(accepted.transaction.settledAt).isNull() },
                 { assertThat(accepted.transaction.transactionKey).isNotBlank() },
+                { assertThat(accepted.transaction.cardType).isEqualTo(CardType.SAMSUNG) },
             )
         }
 
         @DisplayName("같은 주문을 다시 접수하면 새 거래를 만들지 않고 같은 거래키를 돌려준다.")
         @Test
         fun isIdempotentPerOrder() {
-            val first = store.accept(orderId = 1L, amount = amount, at = now)
-            val second = store.accept(orderId = 1L, amount = amount, at = now.plusSeconds(10))
+            val first = accept(orderId = 1L)
+            val second = accept(orderId = 1L, at = now.plusSeconds(10))
 
             assertAll(
                 { assertThat(second.isNew).isFalse() },
@@ -52,8 +67,8 @@ class PgTransactionStoreTest {
         @DisplayName("다른 주문은 서로 다른 거래키를 받는다.")
         @Test
         fun separatesOrders() {
-            val first = store.accept(orderId = 1L, amount = amount, at = now)
-            val second = store.accept(orderId = 2L, amount = amount, at = now)
+            val first = accept(orderId = 1L)
+            val second = accept(orderId = 2L)
 
             assertAll(
                 { assertThat(second.isNew).isTrue() },
@@ -75,7 +90,7 @@ class PgTransactionStoreTest {
                 pool.submit {
                     try {
                         start.await()
-                        val accepted = store.accept(orderId = 1L, amount = amount, at = now)
+                        val accepted = accept(orderId = 1L)
                         keys.add(accepted.transaction.transactionKey)
                         newFlags.add(accepted.isNew)
                     } finally {
@@ -93,6 +108,28 @@ class PgTransactionStoreTest {
                 { assertThat(newFlags.count { it }).isEqualTo(1) },
             )
         }
+
+        @DisplayName("카드번호는 뒤 4자리만 남기고 가린다.")
+        @Test
+        fun masksCardNo() {
+            val accepted = accept(orderId = 1L, cardNo = "1234-5678-9814-1451")
+
+            assertAll(
+                { assertThat(accepted.transaction.maskedCardNo).isEqualTo("****-****-****-1451") },
+                { assertThat(accepted.transaction.maskedCardNo).doesNotContain("1234") },
+            )
+        }
+
+        @DisplayName("테스트 카드는 접수 시점에 어떤 시나리오인지 정해진다.")
+        @Test
+        fun resolvesTestCard() {
+            assertAll(
+                { assertThat(accept(1L, cardNo = "1234-5678-9814-0000").transaction.testCard).isEqualTo(TestCard.DECLINED) },
+                { assertThat(accept(2L, cardNo = "1234-5678-9814-1111").transaction.testCard).isEqualTo(TestCard.SLOW) },
+                { assertThat(accept(3L, cardNo = "1234-5678-9814-2222").transaction.testCard).isEqualTo(TestCard.SILENT) },
+                { assertThat(accept(4L, cardNo = "1234-5678-9814-1451").transaction.testCard).isNull() },
+            )
+        }
     }
 
     @DisplayName("확정할 때,")
@@ -101,7 +138,7 @@ class PgTransactionStoreTest {
         @DisplayName("PENDING 거래는 확정되고 확정 시각이 남는다.")
         @Test
         fun settlesPendingTransaction() {
-            val key = store.accept(orderId = 1L, amount = amount, at = now).transaction.transactionKey
+            val key = accept(orderId = 1L).transaction.transactionKey
             val settledAt = now.plusSeconds(3)
 
             val settled = store.settle(key, PgStatus.SUCCESS, settledAt)
@@ -116,7 +153,7 @@ class PgTransactionStoreTest {
         @DisplayName("이미 확정된 거래는 다시 확정되지 않는다.")
         @Test
         fun keepsFirstResult() {
-            val key = store.accept(orderId = 1L, amount = amount, at = now).transaction.transactionKey
+            val key = accept(orderId = 1L).transaction.transactionKey
             val firstSettledAt = now.plusSeconds(3)
             store.settle(key, PgStatus.SUCCESS, firstSettledAt)
 
@@ -141,7 +178,7 @@ class PgTransactionStoreTest {
         @DisplayName("거래키로 찾는다.")
         @Test
         fun findsByKey() {
-            val key = store.accept(orderId = 1L, amount = amount, at = now).transaction.transactionKey
+            val key = accept(orderId = 1L).transaction.transactionKey
 
             assertThat(store.find(key)?.orderId).isEqualTo(1L)
         }
@@ -149,7 +186,7 @@ class PgTransactionStoreTest {
         @DisplayName("주문으로도 찾는다.")
         @Test
         fun findsByOrderId() {
-            val key = store.accept(orderId = 1L, amount = amount, at = now).transaction.transactionKey
+            val key = accept(orderId = 1L).transaction.transactionKey
 
             assertThat(store.findByOrderId(1L)?.transactionKey).isEqualTo(key)
         }

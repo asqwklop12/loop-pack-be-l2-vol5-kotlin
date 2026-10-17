@@ -17,12 +17,29 @@ import java.time.Instant
 class PgV1Controller(
     private val store: PgTransactionStore,
     private val callbackSender: PgCallbackSender,
+    private val properties: PgSimulatorProperties,
 ) {
     @PostMapping
     fun request(
         @RequestBody request: PgV1Dto.PaymentRequest,
     ): ResponseEntity<PgV1Dto.PaymentResponse> {
-        val accepted = store.accept(request.orderId, request.amount, Instant.now())
+        if (request.cardNo.filter { it.isDigit() }.length < 12) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "카드번호 형식이 올바르지 않습니다.")
+        }
+
+        if (TestCard.of(request.cardNo) == TestCard.SLOW) {
+            Thread.sleep(properties.slowCardDelay.toMillis())
+        }
+
+        val accepted = store.accept(
+            PgTransactionStore.Accept(
+                orderId = request.orderId,
+                amount = request.amount,
+                cardType = request.cardType,
+                cardNo = request.cardNo,
+                at = Instant.now(),
+            ),
+        )
 
         if (accepted.isNew) {
             callbackSender.scheduleSettlement(accepted.transaction.transactionKey)

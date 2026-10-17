@@ -42,7 +42,7 @@
 | --- | --- | --- | --- | --- |
 | D-1 | 결제 결과의 **정본**은 콜백인가, 상태 조회인가 | **콜백 정본** — 콜백 유실 시 거래가 영구 미확정. 보정용 조회가 결국 필요해진다 | **조회 정본** — 콜백은 "지금 조회해보라"는 신호일 뿐. 조회 주기만큼 확정이 늦고 폴링 부하가 생긴다 | `잠정: 조회 정본` — 코드 반영. 그래서 콜백 발신은 실패해도 재발신하지 않는다 |
 | D-2 | 멱등키는 누가 만드나 | **orderId 를 키로** — 별도 키 관리가 없다. 대신 한 주문에 결제 재시도(카드 교체 등)를 못 한다 | **클라이언트 생성 키** — 재시도마다 키를 발급·저장해야 한다 | `잠정: orderId` — 코드 반영 |
-| D-3 | 실패 주입 방식 | **설정 확률** — 실제 운영과 비슷하다. 특정 실패를 테스트에서 재현하기 어렵다 | **요청 헤더 시나리오** — 원하는 실패를 정확히 재현한다. 프로덕션에 없는 입구가 생긴다 | `결정 대기` — 지금은 확률 설정 3개만 있다 |
+| D-3 | 실패 주입 방식 | **설정 확률** — 실제 운영과 비슷하다. 특정 실패를 테스트에서 재현하기 어렵다 | **요청 헤더 시나리오** — 원하는 실패를 정확히 재현한다. 프로덕션에 없는 입구가 생긴다 | `잠정: 테스트 카드번호` — 실제 PG 샌드박스 방식이라 프로덕션에 없는 입구를 만들지 않는다. 확률 설정은 규칙 없는 카드에만 적용되는 폴백으로 남겼다 |
 | D-3a | 컨테이너 조작(`stop`/`pause`)과 toxiproxy 로 덮이는 실패는 시뮬레이터 코드에서 **뺄** 것인가 | **뺀다** — 시뮬레이터가 작아진다. 자동 테스트에서 도커를 조작해야 한다 | **중복으로 둔다** — 테스트는 코드로, 손 실험은 도커로. 같은 실패를 두 군데서 만들 수 있다 | `결정 대기` |
 | D-4 | PG 의 저장소 | **인메모리** — 의존이 없다. 재시작하면 거래가 사라져 "PG 는 알고 우리는 모르는" 상태를 못 만든다 | **MySQL/파일** — 재시작을 넘겨 살아남는다. 스키마·마이그레이션이 늘어난다 | `잠정: 인메모리` — `docker stop` 하면 거래도 사라진다 |
 | D-5 | 콜백 인증 | **없음** — 간단하다. 누구나 우리 콜백 엔드포인트로 거래를 성공시킬 수 있다 | **공유 시크릿 서명** — 검증 로직이 양쪽에 생긴다 | `결정 대기` |
@@ -50,7 +50,25 @@
 
 ---
 
-## 3. 거래 상태
+## 3. 결제 수단과 테스트 카드
+
+접수는 `cardType` 과 `cardNo` 를 받는다. 카드번호는 **뒤 4자리만 남기고 가려서** 보관한다 —
+가짜라도 카드 원본을 우리 쪽에 쌓지 않는다. PG 를 쓰는 이유 중 하나가 그것이기 때문이다.
+
+시나리오는 **카드번호 뒤 4자리**에 박혀 있다. 실제 PG 샌드박스가 테스트 카드를 주는 방식과 같다.
+
+| 뒤 4자리 | 동작 | 재현되는 시나리오 |
+| --- | --- | --- |
+| `0000` | 확정 시 `FAILED` · `declineReason = "한도초과"` | 정상적인 거절. PG 가 건강하다는 증거다 |
+| `1111` | 접수 응답을 `pg.slow-card-delay` 만큼 지연 | S-1 — 호출자의 읽기 타임아웃 |
+| `2222` | `SUCCESS` 로 확정하지만 콜백을 보내지 않음 | S-5 — 콜백 유실 |
+| 그 외 | 정상 승인. `decline-rate` · `callback-drop-rate` 확률이 적용된다 | — |
+
+숫자가 12자리 미만이면 `400` 이다.
+
+---
+
+## 3-1. 거래 상태
 
 > 전이는 D-1 · D-6 이 정해진 뒤 확정된다. 아래는 **PG 쪽 관점**의 뼈대다.
 
@@ -67,6 +85,18 @@ REQUESTED ──접수──> PENDING ──확정──> SUCCESS
 
 **commerce-api 관점에만 있는 상태** — PG 호출이 타임아웃되면 우리는 `PENDING` 도 `FAILED` 도 모른다. 이 "알 수 없음" 을 결제 도메인이 상태로 가질지 `결정 대기`.
 
+그런데 그 "알 수 없음" 이 한 가지 모양으로 오지 않는다. `SimpleClientHttpRequestFactory`(HttpURLConnection) 기준으로 측정한 값이다.
+
+| 상황 | 던져지는 예외 | 근본 원인 | 거래가 PG 에 생겼는가 |
+| --- | --- | --- | --- |
+| `docker pause` · 느린 응답 | `RestClientException` | `SocketTimeoutException` | **생겼을 수 있다** |
+| `docker stop` · PG 다운 | `ResourceAccessException` | `ConnectException` | 생기지 않았다 |
+
+읽기 타임아웃이 "네트워크 오류" 가 아니라 **응답 변환 오류**로 포장된다. 상태줄을 본문 추출 시점에 읽기 때문이다.
+그래서 `ResourceAccessException` 만 잡아 "PG 통신 실패" 로 처리하면 **읽기 타임아웃을 놓친다** — 하필 거래가 생겼을 수 있는 쪽을.
+
+`결정 대기` — 요청 팩토리를 `JdkClientHttpRequestFactory` 로 바꾸면 두 실패가 같은 예외로 통일된다. 통일하는 쪽이 다루기 쉽고, 지금처럼 갈라진 쪽이 "도달했을 수 있음" 과 "도달 안 함" 을 구별하기 쉽다.
+
 ---
 
 ## 4. 재현해야 할 장애 시나리오
@@ -75,17 +105,18 @@ REQUESTED ──접수──> PENDING ──확정──> SUCCESS
 
 | ID | 상황 | 시뮬레이터가 하는 일 | commerce-api 가 겪는 것 |
 | --- | --- | --- | --- |
-| S-1 | 느린 응답 | 접수 응답을 N 초 지연 **또는** `docker pause` | read timeout. 그런데 PG 에는 거래가 **생겼다** |
+| S-1 | 느린 응답 | `...1111` 카드 **또는** `docker pause` | read timeout. 그런데 PG 에는 거래가 **생겼다** |
 | S-1a | 타임아웃 후 부활 | `docker unpause` | 우리가 포기한 거래가 PG 에서는 확정된다. D-1 이 여기 걸린다 |
 | S-2 | 즉시 서버 오류 | 5xx 반환 | 거래가 생겼는지 안 생겼는지 모른다 |
 | S-3 | PG 다운 | `docker stop` | connect 실패. 거래는 생기지 않았다 |
 | S-3a | PG 가 다시 살아남 | `docker start` | 그 사이 쌓인 미확정 건을 누가 어떻게 따라잡나 (D-1) |
 | S-4 | 중복 접수 | 같은 멱등키로 2회 요청 | 두 번째도 같은 거래키·같은 결과를 받아야 한다 (D-2) |
-| S-5 | 콜백 유실 | 콜백을 보내지 않음 | 조회 없이는 영구 미확정 (D-1 이 여기 걸린다) |
+| S-5 | 콜백 유실 | `...2222` 카드 또는 `callback-drop-rate` | 조회 없이는 영구 미확정 (D-1 이 여기 걸린다) |
 | S-6 | 콜백 중복 | 같은 콜백을 2회 발신 | 두 번 반영되면 안 된다 |
 | S-7 | 콜백 순서 역전 | `SUCCESS` 뒤에 `PENDING` 콜백 | 종단 상태가 되돌아가면 안 된다 |
 | S-8 | 조회가 콜백보다 빠름 | 콜백 전에 조회하면 `PENDING` | 미확정 응답을 실패로 단정하면 안 된다 |
 | S-9 | 콜백 수신 실패 | commerce-api 가 5xx 로 응답 | PG 가 재발신할지 `결정 대기` |
+| S-10 | 정상 거절 | `...0000` 카드 | 실패지만 **PG 는 건강하다.** 서킷이 이것을 실패로 세면 안 된다 |
 
 ---
 
@@ -128,39 +159,73 @@ apps/pg-simulator/Dockerfile    bootJar 산출물을 COPY (멀티스테이지 �
 
 ## 6. 현재 구현
 
-버전은 `0.1.0` 이며 변경 기록은 [pg-simulator-changelog.md](pg-simulator-changelog.md) 에 있다.
+버전은 `0.2.0` 이며 변경 기록은 [pg-simulator-changelog.md](pg-simulator-changelog.md) 에 있다.
 도는 컨테이너는 `GET /actuator/info` 로 자기 버전을 말한다.
 
 
 | 파일 | 역할 |
 | --- | --- |
 | `PgSimulatorApplication.kt` | 부팅 · KST 고정 |
-| `PgSimulatorProperties.kt` | `pg.*` 설정 바인딩 (콜백 주소 · 지연 · 거절률 · 콜백 드롭률) |
+| `PgSimulatorProperties.kt` | `pg.*` 설정 바인딩 (콜백 주소 · 지연 · 느린 카드 지연 · 거절률 · 콜백 드롭률) |
 | `PgTransaction.kt` | 거래 모델 · `PgStatus` · 종단 상태 보호(`settle`) |
+| `CardType.kt` · `TestCard.kt` · `CardNo.kt` | 카드사 · 테스트 카드 판정 · 마스킹 |
 | `PgTransactionStore.kt` | 인메모리 저장 · orderId 멱등 |
 | `PgCallbackSender.kt` | 지연 후 확정 → 콜백 발신 (재발신 없음) |
 | `PgV1Controller.kt` · `PgV1Dto.kt` | 접수 · 거래키 조회 · orderId 조회 |
-| `PgTransactionStoreTest.kt` | 멱등 · 동시 접수 · 종단 상태 보호 (10개) |
-| `PgCallbackSenderTest.kt` | 콜백 발신 · 거절 · 드롭 · 재발신 없음 (5개) |
-| `PgV1ApiE2ETest.kt` | 접수 · 조회 · 404 · null 필드 제외 (7개) |
+| `PgTransactionStoreTest.kt` | 멱등 · 동시 접수 · 종단 상태 보호 · 마스킹 · 테스트 카드 판정 (12개) |
+| `PgCallbackSenderTest.kt` | 콜백 발신 · 거절 · 드롭 · 재발신 없음 · 카드별 시나리오 (8개) |
+| `PgV1ApiE2ETest.kt` | 접수 · 조회 · 404 · null 필드 제외 · 카드번호 미노출 (9개) |
 | `PgSimulatorContextTest.kt` | 컨텍스트 로드 (1개) |
 
-테스트 23개 · 실패 0.
+테스트 30개 · 실패 0.
 
-아직 없는 것 — 콜백 서명(D-5), 요청별 실패 시나리오 지정(D-3), 영속 저장(D-4), 콜백 중복·순서 역전 발신(S-6 · S-7).
+아직 없는 것 — 콜백 서명(D-5), 영속 저장(D-4), 콜백 중복·순서 역전 발신(S-6 · S-7).
 
 ---
 
 ## 7. 인터페이스
 
-> 필드는 D-1 ~ D-6 결정 후 채운다. 지금은 **엔드포인트의 존재와 역할**만 못 박는다.
-
-| # | Method / Path | 역할 | 비어 있는 것 |
+| # | Method / Path | 역할 | status |
 | --- | --- | --- | --- |
-| 1 | `POST /api/v1/payments` | 결제 접수. 거래키 발급 | 요청 필드, 멱등키 전달 위치(본문 vs 헤더), 응답 status(200 vs 202) |
-| 2 | `GET /api/v1/payments/{transactionKey}` | 거래 상태 조회 | 없는 키의 응답 |
-| 3 | `GET /api/v1/payments?orderId=` | 주문 기준 조회 | 이 엔드포인트가 필요한지 자체가 D-2 에 달려 있다 |
-| 4 | (PG → 우리) `POST /api/v1/payments/callback` | 결과 통보 수신 | 본문 포맷, 서명(D-5), 재발신 정책(S-9) |
+| 1 | `POST /api/v1/payments` | 결제 접수. 거래키 발급 | `202` · 잘못된 카드번호는 `400` |
+| 2 | `GET /api/v1/payments/{transactionKey}` | 거래 상태 조회 | `200` · 없으면 `404` |
+| 3 | `GET /api/v1/payments?orderId=` | 주문 기준 조회 | `200` · 없으면 `404` |
+| 4 | (PG → 우리) `POST /api/v1/payments/callback` | 결과 통보 수신 | **미구현** — 본문 포맷은 아래, 서명(D-5)·재발신(S-9)은 `결정 대기` |
+
+접수 요청과 응답:
+
+```json
+// POST /api/v1/payments
+{ "orderId": 1001, "amount": 50000, "cardType": "SAMSUNG", "cardNo": "1234-5678-9814-1451" }
+
+// 202
+{
+  "transactionKey": "pgtx_a4c20d5f67204b8b8883",
+  "orderId": 1001,
+  "amount": 50000,
+  "cardType": "SAMSUNG",
+  "maskedCardNo": "****-****-****-1451",
+  "status": "PENDING",
+  "requestedAt": "2026-10-17T16:31:55.488550262Z"
+}
+```
+
+확정 후 조회하면 `status` 가 `SUCCESS` · `FAILED` 로 바뀌고 `settledAt` 이 붙는다.
+거절이면 `declineReason` 도 온다. `null` 인 필드는 키 자체가 빠진다.
+
+PG 가 보내는 콜백 본문:
+
+```json
+{
+  "transactionKey": "pgtx_a4c20d5f67204b8b8883",
+  "orderId": 1001,
+  "status": "SUCCESS",
+  "amount": "50000",
+  "settledAt": "2026-10-17T16:31:58.590Z"
+}
+```
+
+`cardType` 은 `SAMSUNG` `KB` `HYUNDAI` `SHINHAN` `LOTTE` `WOORI` `HANA` `BC` 다.
 
 ---
 

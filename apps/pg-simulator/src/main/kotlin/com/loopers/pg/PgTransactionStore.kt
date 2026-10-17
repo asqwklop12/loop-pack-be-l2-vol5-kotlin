@@ -11,17 +11,20 @@ class PgTransactionStore {
     private val byKey = ConcurrentHashMap<String, PgTransaction>()
     private val keyByOrderId = ConcurrentHashMap<Long, String>()
 
-    fun accept(orderId: Long, amount: BigInteger, at: Instant): Accepted {
+    fun accept(command: Accept): Accepted {
         var createdKey: String? = null
 
-        val key = keyByOrderId.computeIfAbsent(orderId) {
+        val key = keyByOrderId.computeIfAbsent(command.orderId) {
             val generated = "pgtx_" + UUID.randomUUID().toString().replace("-", "").take(20)
             byKey[generated] = PgTransaction(
                 transactionKey = generated,
-                orderId = orderId,
-                amount = amount,
+                orderId = command.orderId,
+                amount = command.amount,
+                cardType = command.cardType,
+                maskedCardNo = CardNo.mask(command.cardNo),
                 status = PgStatus.PENDING,
-                requestedAt = at,
+                requestedAt = command.at,
+                testCard = TestCard.of(command.cardNo),
             )
             createdKey = generated
             generated
@@ -34,8 +37,16 @@ class PgTransactionStore {
 
     fun findByOrderId(orderId: Long): PgTransaction? = keyByOrderId[orderId]?.let { byKey[it] }
 
-    fun settle(transactionKey: String, next: PgStatus, at: Instant): PgTransaction? =
-        byKey.compute(transactionKey) { _, current -> current?.settle(next, at) }
+    fun settle(transactionKey: String, next: PgStatus, at: Instant, reason: String? = null): PgTransaction? =
+        byKey.compute(transactionKey) { _, current -> current?.settle(next, at, reason) }
+
+    data class Accept(
+        val orderId: Long,
+        val amount: BigInteger,
+        val cardType: CardType,
+        val cardNo: String,
+        val at: Instant,
+    )
 
     data class Accepted(
         val transaction: PgTransaction,

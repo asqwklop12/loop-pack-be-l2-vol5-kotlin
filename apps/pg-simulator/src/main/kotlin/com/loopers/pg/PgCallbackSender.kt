@@ -29,10 +29,11 @@ class PgCallbackSender(
     }
 
     private fun settleAndNotify(transactionKey: String) {
-        val next = if (Random.nextDouble() < properties.declineRate) PgStatus.FAILED else PgStatus.SUCCESS
-        val settled = store.settle(transactionKey, next, Instant.now()) ?: return
+        val pending = store.find(transactionKey) ?: return
+        val outcome = decide(pending)
+        val settled = store.settle(transactionKey, outcome.status, Instant.now(), outcome.reason) ?: return
 
-        if (Random.nextDouble() < properties.callbackDropRate) {
+        if (shouldDropCallback(settled)) {
             log.warn("콜백 드롭. key={} status={}", settled.transactionKey, settled.status)
             return
         }
@@ -46,6 +47,7 @@ class PgCallbackSender(
                         orderId = settled.orderId,
                         status = settled.status,
                         amount = settled.amount.toString(),
+                        declineReason = settled.declineReason,
                         settledAt = settled.settledAt,
                     ),
                 )
@@ -56,11 +58,30 @@ class PgCallbackSender(
         }
     }
 
+    private fun decide(pending: PgTransaction): Outcome =
+        when (pending.testCard) {
+            TestCard.DECLINED -> Outcome(PgStatus.FAILED, "한도초과")
+            else -> if (Random.nextDouble() < properties.declineRate) {
+                Outcome(PgStatus.FAILED, "승인거절")
+            } else {
+                Outcome(PgStatus.SUCCESS, null)
+            }
+        }
+
+    private fun shouldDropCallback(settled: PgTransaction): Boolean =
+        settled.testCard == TestCard.SILENT || Random.nextDouble() < properties.callbackDropRate
+
+    private data class Outcome(
+        val status: PgStatus,
+        val reason: String?,
+    )
+
     data class PgCallback(
         val transactionKey: String,
         val orderId: Long,
         val status: PgStatus,
         val amount: String,
+        val declineReason: String?,
         val settledAt: Instant?,
     )
 }
