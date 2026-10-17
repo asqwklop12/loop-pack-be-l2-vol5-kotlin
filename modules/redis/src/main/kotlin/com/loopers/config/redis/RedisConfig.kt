@@ -73,7 +73,19 @@ class RedisConfig(
             masterReplicaConfig.addNode(replica.host, replica.port)
         }
 
-        return LettuceConnectionFactory(masterReplicaConfig, lettuceClientConfiguration)
+        return LettuceConnectionFactory(masterReplicaConfig, lettuceClientConfiguration).apply {
+            /*
+             * Redis 가 끊겼다 돌아와도 스스로 복구하게 한다.
+             *
+             * 기본값은 연결 하나를 공유하면서(`shareNativeConnection = true`) 그 연결이
+             * 살아 있는지 확인하지 않는다(`validateConnection = false`). 그래서 한번 끊기면
+             * 죽은 연결을 계속 내어주고, Redis 가 다시 떠도 앱을 재시작하기 전까지 복구되지 않는다.
+             *
+             * 켜면 연결을 내어주기 전에 `PING` 으로 확인하고, 죽어 있으면 새로 만든다.
+             * `PING` 한 번이 더 들지만 끊긴 뒤 영원히 캐시를 못 쓰는 것보다 싸다.
+             */
+            validateConnection = true
+        }
     }
 
     private fun <K, V> RedisTemplate<K, V>.defaultRedisTemplate(

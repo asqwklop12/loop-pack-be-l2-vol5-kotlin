@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 980" width="880" height="980" role="img" aria-label="인기순 목록 부하 측정. TTL 만료 시 p99 가 21,170ms 로 터진다.">
+<rect width="880" height="980" fill="#FFFFFF"/>
+<text x="30.0" y="40.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="21" font-weight="600" fill="#13201F" text-anchor="start">인기순 목록 부하 측정 — 캐시 스탬피드</text>
+<text x="30.0" y="64.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="12.5" font-weight="400" fill="#7E8F8D" text-anchor="start">상품 100만 · 좋아요 198만 · 커넥션 풀 40 · 캐시 TTL 60초 · k6 constant-vus</text>
+<rect x="30" y="92" width="820" height="272" rx="3" fill="#F7FAF9" stroke="#DCE4E3"/>
+<text x="50.0" y="119.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="13.5" font-weight="600" fill="#13201F" text-anchor="start">p50 · p95 — 거의 움직이지 않는다</text>
+<text x="50.0" y="137.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11.5" font-weight="400" fill="#7E8F8D" text-anchor="start">단위 ms · 축 최대 1,400</text>
+<text x="830.0" y="120.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="11.5" font-weight="400" fill="#50605E" text-anchor="end">p95</text>
+<rect x="790.0" y="111" width="11" height="11" rx="2" fill="#0D9488"/>
+<text x="771.0" y="120.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="11.5" font-weight="400" fill="#50605E" text-anchor="end">p50</text>
+<rect x="731.0" y="111" width="11" height="11" rx="2" fill="#14B8A6"/>
+<line x1="98" x2="828" y1="330.0" y2="330.0" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="334.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">0</text>
+<line x1="98" x2="828" y1="284.5" y2="284.5" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="288.5" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">350</text>
+<line x1="98" x2="828" y1="239.0" y2="239.0" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="243.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">700</text>
+<line x1="98" x2="828" y1="193.5" y2="193.5" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="197.5" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">1,050</text>
+<line x1="98" x2="828" y1="148.0" y2="148.0" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="152.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">1,400</text>
+<line x1="98" x2="828" y1="330" y2="330" stroke="#DCE4E3" stroke-width="1"/>
+<path d="M143.8,330.0 L143.8,302.4 Q143.8,298.4 147.8,298.4 L183.8,298.4 Q187.8,298.4 187.8,302.4 L187.8,330.0 Z" fill="#14B8A6"/>
+<text x="165.8" y="291.4" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">243</text>
+<path d="M190.8,330.0 L190.8,300.5 Q190.8,296.5 194.8,296.5 L230.8,296.5 Q234.8,296.5 234.8,300.5 L234.8,330.0 Z" fill="#0D9488"/>
+<text x="212.8" y="289.5" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">258</text>
+<text x="189.2" y="351.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">1 VU</text>
+<path d="M326.2,330.0 L326.2,299.3 Q326.2,295.3 330.2,295.3 L366.2,295.3 Q370.2,295.3 370.2,299.3 L370.2,330.0 Z" fill="#14B8A6"/>
+<text x="348.2" y="288.3" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">267</text>
+<path d="M373.2,330.0 L373.2,291.5 Q373.2,287.5 377.2,287.5 L413.2,287.5 Q417.2,287.5 417.2,291.5 L417.2,330.0 Z" fill="#0D9488"/>
+<text x="395.2" y="280.5" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">327</text>
+<text x="371.8" y="351.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">10 VU</text>
+<path d="M508.8,330.0 L508.8,216.3 Q508.8,212.3 512.8,212.3 L548.8,212.3 Q552.8,212.3 552.8,216.3 L552.8,330.0 Z" fill="#14B8A6"/>
+<text x="530.8" y="205.3" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">905</text>
+<path d="M555.8,330.0 L555.8,185.8 Q555.8,181.8 559.8,181.8 L595.8,181.8 Q599.8,181.8 599.8,185.8 L599.8,330.0 Z" fill="#0D9488"/>
+<text x="577.8" y="174.8" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">1,140</text>
+<text x="554.2" y="351.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">40 VU · TTL 안</text>
+<path d="M691.2,330.0 L691.2,216.7 Q691.2,212.7 695.2,212.7 L731.2,212.7 Q735.2,212.7 735.2,216.7 L735.2,330.0 Z" fill="#14B8A6"/>
+<text x="713.2" y="205.7" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">902</text>
+<path d="M738.2,330.0 L738.2,178.0 Q738.2,174.0 742.2,174.0 L778.2,174.0 Q782.2,174.0 782.2,178.0 L782.2,330.0 Z" fill="#0D9488"/>
+<text x="760.2" y="167.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">1,200</text>
+<text x="736.8" y="351.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">40 VU · TTL 만료</text>
+<rect x="30" y="386" width="820" height="272" rx="3" fill="#F7FAF9" stroke="#DCE4E3"/>
+<text x="50.0" y="413.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="13.5" font-weight="600" fill="#13201F" text-anchor="start">p99 — 같은 실행에서 17배로 터진다</text>
+<text x="50.0" y="431.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11.5" font-weight="400" fill="#7E8F8D" text-anchor="start">단위 ms · 축 최대 22,000</text>
+<text x="830.0" y="414.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="11.5" font-weight="400" fill="#50605E" text-anchor="end">p99</text>
+<rect x="790.0" y="405" width="11" height="11" rx="2" fill="#115E59"/>
+<line x1="98" x2="828" y1="624.0" y2="624.0" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="628.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">0</text>
+<line x1="98" x2="828" y1="578.5" y2="578.5" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="582.5" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">5,500</text>
+<line x1="98" x2="828" y1="533.0" y2="533.0" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="537.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">11,000</text>
+<line x1="98" x2="828" y1="487.5" y2="487.5" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="491.5" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">16,500</text>
+<line x1="98" x2="828" y1="442.0" y2="442.0" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="446.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">22,000</text>
+<line x1="98" x2="828" y1="624" y2="624" stroke="#DCE4E3" stroke-width="1"/>
+<path d="M167.2,624.0 L167.2,623.2 Q167.2,619.2 171.2,619.2 L207.2,619.2 Q211.2,619.2 211.2,623.2 L211.2,624.0 Z" fill="#115E59"/>
+<text x="189.2" y="612.2" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">580</text>
+<text x="189.2" y="645.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">1 VU</text>
+<path d="M349.8,624.0 L349.8,623.8 Q349.8,619.8 353.8,619.8 L389.8,619.8 Q393.8,619.8 393.8,623.8 L393.8,624.0 Z" fill="#115E59"/>
+<text x="371.8" y="612.8" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">512</text>
+<text x="371.8" y="645.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">10 VU</text>
+<path d="M532.2,624.0 L532.2,617.6 Q532.2,613.6 536.2,613.6 L572.2,613.6 Q576.2,613.6 576.2,617.6 L576.2,624.0 Z" fill="#115E59"/>
+<text x="554.2" y="606.6" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">1,260</text>
+<text x="554.2" y="645.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">40 VU · TTL 안</text>
+<path d="M714.8,624.0 L714.8,452.9 Q714.8,448.9 718.8,448.9 L754.8,448.9 Q758.8,448.9 758.8,452.9 L758.8,624.0 Z" fill="#115E59"/>
+<text x="736.8" y="441.9" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">21,170</text>
+<text x="736.8" y="645.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">40 VU · TTL 만료</text>
+<text x="700.0" y="486.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="600" fill="#C2410C" text-anchor="end">TTL 이 끝난 순간</text>
+<text x="700.0" y="502.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#C2410C" text-anchor="end">41개 요청이 동시에 미스</text>
+<text x="700.0" y="518.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#C2410C" text-anchor="end">같은 쿼리를 함께 실행</text>
+<rect x="30" y="680" width="820" height="272" rx="3" fill="#F7FAF9" stroke="#DCE4E3"/>
+<text x="50.0" y="707.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="13.5" font-weight="600" fill="#13201F" text-anchor="start">처리량 — 10 VU 에서 이미 천장에 닿는다</text>
+<text x="50.0" y="725.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11.5" font-weight="400" fill="#7E8F8D" text-anchor="start">단위 req/s · 축 최대 45</text>
+<text x="830.0" y="708.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="11.5" font-weight="400" fill="#50605E" text-anchor="end">req/s</text>
+<rect x="776.0" y="699" width="11" height="11" rx="2" fill="#C2410C"/>
+<line x1="98" x2="828" y1="918.0" y2="918.0" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="922.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">0</text>
+<line x1="98" x2="828" y1="857.3" y2="857.3" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="861.3" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">15</text>
+<line x1="98" x2="828" y1="796.7" y2="796.7" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="800.7" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">30</text>
+<line x1="98" x2="828" y1="736.0" y2="736.0" stroke="#EDF2F1" stroke-width="1"/>
+<text x="88.0" y="740.0" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10.5" font-weight="400" fill="#7E8F8D" text-anchor="end">45</text>
+<line x1="98" x2="828" y1="918" y2="918" stroke="#DCE4E3" stroke-width="1"/>
+<path d="M167.2,918.0 L167.2,906.6 Q167.2,902.6 171.2,902.6 L207.2,902.6 Q211.2,902.6 211.2,906.6 L211.2,918.0 Z" fill="#C2410C"/>
+<text x="189.2" y="895.6" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">3.8</text>
+<text x="189.2" y="939.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">1 VU</text>
+<path d="M349.8,918.0 L349.8,777.2 Q349.8,773.2 353.8,773.2 L389.8,773.2 Q393.8,773.2 393.8,777.2 L393.8,918.0 Z" fill="#C2410C"/>
+<text x="371.8" y="766.2" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">35.8</text>
+<text x="371.8" y="939.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">10 VU</text>
+<path d="M532.2,918.0 L532.2,755.8 Q532.2,751.8 536.2,751.8 L572.2,751.8 Q576.2,751.8 576.2,755.8 L576.2,918.0 Z" fill="#C2410C"/>
+<text x="554.2" y="744.8" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">41.1</text>
+<text x="554.2" y="939.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">40 VU · TTL 안</text>
+<path d="M714.8,918.0 L714.8,786.1 Q714.8,782.1 718.8,782.1 L754.8,782.1 Q758.8,782.1 758.8,786.1 L758.8,918.0 Z" fill="#C2410C"/>
+<text x="736.8" y="775.1" font-family="ui-monospace, SFMono-Regular, Menlo, 'DejaVu Sans Mono', monospace" font-size="10" font-weight="500" fill="#50605E" text-anchor="middle">33.6</text>
+<text x="736.8" y="939.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11" font-weight="400" fill="#7E8F8D" text-anchor="middle">40 VU · TTL 만료</text>
+<line x1="30" x2="850" y1="978" y2="978" stroke="#DCE4E3" stroke-width="1"/>
+<text x="30.0" y="998.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="12" font-weight="600" fill="#13201F" text-anchor="start">읽은 것</text>
+<text x="30.0" y="1022.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11.5" font-weight="400" fill="#50605E" text-anchor="start">· p50 과 p95 로는 스탬피드가 보이지 않는다. 평균 1.16초 · p95 1.20초 · p99 21.17초.</text>
+<text x="30.0" y="1040.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11.5" font-weight="400" fill="#50605E" text-anchor="start">· 포화점은 10~40 VU 사이다. 35.8 → 41.1 req/s 로 처리량은 멈췄는데 지연만 3배 올랐다.</text>
+<text x="30.0" y="1058.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11.5" font-weight="400" fill="#50605E" text-anchor="start">· 커넥션 풀은 active 40/40 · pending 0 — 병목은 풀이 아니라 그 뒤의 MySQL 이다.</text>
+<text x="30.0" y="1076.0" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif" font-size="11.5" font-weight="400" fill="#50605E" text-anchor="start">· 혼자 2.6초인 집계 쿼리가 41개 동시 실행에서 각각 20초가 됐다. 버퍼 풀 128MB 를 서로 밀어낸다.</text>
+</svg>
