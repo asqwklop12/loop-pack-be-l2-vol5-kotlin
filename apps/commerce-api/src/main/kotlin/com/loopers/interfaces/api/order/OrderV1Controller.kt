@@ -3,6 +3,7 @@ package com.loopers.interfaces.api.order
 import com.loopers.application.order.OrderFacade
 import com.loopers.application.order.OrderInfo
 import com.loopers.domain.order.OrderCommand
+import com.loopers.domain.payment.CardInfo
 import com.loopers.interfaces.api.ApiResponse
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -34,8 +35,11 @@ class OrderV1Controller(
     fun confirm(
         @RequestHeader(value = "X-USER-ID") userId: Long,
         @PathVariable(value = "orderId") orderId: Long,
+        @RequestBody(required = false) request: OrderV1Dto.ConfirmRequest? = null,
     ): ApiResponse<OrderV1Dto.OrderResponse> {
-        return orderFacade.confirm(userId, orderId)
+        val card = request?.let { CardInfo(type = it.cardType, number = it.cardNo) }
+
+        return orderFacade.confirm(userId, orderId, card)
             .let { toResponse(it) }
             .let { ApiResponse.success(it) }
     }
