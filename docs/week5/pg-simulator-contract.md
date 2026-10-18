@@ -59,12 +59,30 @@
 
 | 뒤 4자리 | 동작 | 재현되는 시나리오 |
 | --- | --- | --- |
-| `0000` | 확정 시 `FAILED` · `declineReason = "한도초과"` | 정상적인 거절. PG 가 건강하다는 증거다 |
+| `0000` | 확정 시 `FAILED` · `LIMIT_EXCEEDED` (확률과 무관) | 정상적인 거절. PG 가 건강하다는 증거다 |
 | `1111` | 접수 응답을 `pg.slow-card-delay` 만큼 지연 | S-1 — 호출자의 읽기 타임아웃 |
 | `2222` | `SUCCESS` 로 확정하지만 콜백을 보내지 않음 | S-5 — 콜백 유실 |
-| 그 외 | 정상 승인. `decline-rate` · `callback-drop-rate` 확률이 적용된다 | — |
+| 그 외 | `pg.decline.*` 확률 룰렛을 돌린다. 걸리지 않으면 승인 | — |
 
 숫자가 12자리 미만이면 `400` 이다.
+
+### 거절 사유
+
+실제 PG 는 거절 사유 코드를 준다. 사유마다 성격이 다르고, 그 차이가 서킷 설계와 직결된다.
+
+| 코드 | 사유 | 기본 확률 | 재시도하면 |
+| --- | --- | --- | --- |
+| `LIMIT_EXCEEDED` | 한도초과 | 0.5% | 소용없다. 카드 쪽 사정이다 |
+| `INSUFFICIENT_BALANCE` | 잔액부족 | 0.5% | 소용없다 |
+| `LOST_OR_STOLEN` | 분실·도난 카드 | 0.1% | 소용없다 |
+| `ISSUER_UNAVAILABLE` | 카드사 응답 없음 | 0% (꺼둠) | **의미 있다.** 카드사가 아픈 것이다 |
+
+앞의 셋은 **PG 가 건강하다는 증거**다. 서킷이 이것을 실패로 세면 한도를 넘긴 사용자들
+때문에 서킷이 열린다 (S-10). `ISSUER_UNAVAILABLE` 만 성격이 다르며, 둘을 가를 수 있는지
+보려고 기본값을 0 으로 두고 남겨뒀다.
+
+기본 합계는 1.1% 다. 실제 승인 거절률을 감안해 낮게 잡았고,
+`PG_DECLINE_LIMIT_EXCEEDED` 같은 환경변수로 올린다.
 
 ---
 
@@ -102,12 +120,14 @@ REQUESTED ──접수──> PENDING ──확정──> SUCCESS
 ## 4. 재현해야 할 장애 시나리오
 
 > 이 목록이 시뮬레이터의 **기능 요구**다. 각 줄을 일으킬 수 있어야 시뮬레이터가 완성이다.
+> 단 **주입하지 않는 것**도 있다. 시뮬레이터가 흉내 내야 할 것은 PG 의 *응답*이지
+> PG 의 *고장* 이 아니다. 고장은 컨테이너를 실제로 멈춰서 만든다.
 
 | ID | 상황 | 시뮬레이터가 하는 일 | commerce-api 가 겪는 것 |
 | --- | --- | --- | --- |
 | S-1 | 느린 응답 | `...1111` 카드 **또는** `docker pause` | read timeout. 그런데 PG 에는 거래가 **생겼다** |
 | S-1a | 타임아웃 후 부활 | `docker unpause` | 우리가 포기한 거래가 PG 에서는 확정된다. D-1 이 여기 걸린다 |
-| S-2 | 즉시 서버 오류 | 5xx 반환 | 거래가 생겼는지 안 생겼는지 모른다 |
+| S-2 | 즉시 서버 오류 | **주입하지 않는다** | 5xx 가 오면 거래가 생겼는지 모른다. 다만 이건 PG 가 실제로 아플 때 나는 것이지 확률로 뿌릴 손잡이가 아니다 — 아픈 상태는 `docker pause` · `stop` 으로 진짜로 만든다 |
 | S-3 | PG 다운 | `docker stop` | connect 실패. 거래는 생기지 않았다 |
 | S-3a | PG 가 다시 살아남 | `docker start` | 그 사이 쌓인 미확정 건을 누가 어떻게 따라잡나 (D-1) |
 | S-4 | 중복 접수 | 같은 멱등키로 2회 요청 | 두 번째도 같은 거래키·같은 결과를 받아야 한다 (D-2) |
@@ -159,14 +179,15 @@ apps/pg-simulator/Dockerfile    bootJar 산출물을 COPY (멀티스테이지 �
 
 ## 6. 현재 구현
 
-버전은 `0.2.0` 이며 변경 기록은 [pg-simulator-changelog.md](pg-simulator-changelog.md) 에 있다.
+버전은 `0.3.0` 이며 변경 기록은 [pg-simulator-changelog.md](pg-simulator-changelog.md) 에 있다.
 도는 컨테이너는 `GET /actuator/info` 로 자기 버전을 말한다.
 
 
 | 파일 | 역할 |
 | --- | --- |
 | `PgSimulatorApplication.kt` | 부팅 · KST 고정 |
-| `PgSimulatorProperties.kt` | `pg.*` 설정 바인딩 (콜백 주소 · 지연 · 느린 카드 지연 · 거절률 · 콜백 드롭률) |
+| `PgSimulatorProperties.kt` | `pg.*` 설정 바인딩 (콜백 주소 · 지연 · 느린 카드 지연 · 사유별 거절 확률 · 콜백 드롭률) |
+| `DeclineReason.kt` · `DeclineRoulette.kt` | 거절 사유와 사유별 확률 추첨 |
 | `PgTransaction.kt` | 거래 모델 · `PgStatus` · 종단 상태 보호(`settle`) |
 | `CardType.kt` · `TestCard.kt` · `CardNo.kt` | 카드사 · 테스트 카드 판정 · 마스킹 |
 | `PgTransactionStore.kt` | 인메모리 저장 · orderId 멱등 |
@@ -174,10 +195,11 @@ apps/pg-simulator/Dockerfile    bootJar 산출물을 COPY (멀티스테이지 �
 | `PgV1Controller.kt` · `PgV1Dto.kt` | 접수 · 거래키 조회 · orderId 조회 |
 | `PgTransactionStoreTest.kt` | 멱등 · 동시 접수 · 종단 상태 보호 · 마스킹 · 테스트 카드 판정 (12개) |
 | `PgCallbackSenderTest.kt` | 콜백 발신 · 거절 · 드롭 · 재발신 없음 · 카드별 시나리오 (8개) |
+| `DeclineRouletteTest.kt` | 사유별 확률 분배 · 기본 거절률 상한 (4개) |
 | `PgV1ApiE2ETest.kt` | 접수 · 조회 · 404 · null 필드 제외 · 카드번호 미노출 (9개) |
 | `PgSimulatorContextTest.kt` | 컨텍스트 로드 (1개) |
 
-테스트 30개 · 실패 0.
+테스트 34개 · 실패 0.
 
 아직 없는 것 — 콜백 서명(D-5), 영속 저장(D-4), 콜백 중복·순서 역전 발신(S-6 · S-7).
 
@@ -211,7 +233,7 @@ apps/pg-simulator/Dockerfile    bootJar 산출물을 COPY (멀티스테이지 �
 ```
 
 확정 후 조회하면 `status` 가 `SUCCESS` · `FAILED` 로 바뀌고 `settledAt` 이 붙는다.
-거절이면 `declineReason` 도 온다. `null` 인 필드는 키 자체가 빠진다.
+거절이면 `declineCode` 와 `declineReason` 이 함께 온다. `null` 인 필드는 키 자체가 빠진다.
 
 PG 가 보내는 콜백 본문:
 

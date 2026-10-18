@@ -20,5 +20,6 @@ $ curl -s localhost:8082/actuator/info
 
 | 버전 | 날짜 | 바뀐 것 | commerce-api 에 주는 영향 |
 | --- | --- | --- | --- |
+| 0.3.0 | 2026-10-18 | 거절 사유를 준다 — `LIMIT_EXCEEDED` · `INSUFFICIENT_BALANCE` · `LOST_OR_STOLEN` · `ISSUER_UNAVAILABLE`. 응답과 콜백에 `declineCode` · `declineReason` 이 함께 실린다. 설정이 단일 `decline-rate` 에서 사유별 확률(`pg.decline.*`)로 바뀌었고 기본 합계는 1.1% 다 | 응답 필드가 늘었을 뿐 기존 필드는 그대로라 `PgClient` 는 무영향. 다만 **거절 사유를 읽지 않고 버리고 있다** |
 | 0.2.0 | 2026-10-18 | 결제 수단을 받는다 — `cardType` · `cardNo` 필수. 카드번호는 뒤 4자리만 남기고 마스킹. 테스트 카드로 시나리오 지정(`0000` 거절 · `1111` 지연 · `2222` 콜백유실). 거절 사유(`declineReason`) 추가. 확률 설정은 규칙 없는 카드의 폴백으로 내려감 | **계약 변경** — 접수 요청에 필드 2개가 필수로 늘었다. `PgClient` · `PaymentGateway` 가 `CardInfo` 를 받도록 같이 바뀌었다 |
 | 0.1.0 | 2026-10-18 | 첫 구동. 접수(202 PENDING) · 거래키 조회 · orderId 조회 · orderId 멱등 · 지연 후 확정 · 콜백 발신(재발신 없음) · 확률 기반 거절·콜백 드롭 | 없음 (연동 전) |
