@@ -4,6 +4,7 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.order.OrderCommand
 import com.loopers.domain.payment.CardInfo
 import com.loopers.domain.payment.PaymentGateway
+import com.loopers.domain.payment.PaymentMethod
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PaymentTransaction
 import com.loopers.domain.point.PointService
@@ -72,7 +73,7 @@ class OrderPaymentIntegrationTest @Autowired constructor(
             )
         }
 
-        orderFacade.confirm(userId, orderId, card)
+        orderFacade.confirm(userId, orderId, PaymentMethod.CARD, card)
 
         assertAll(
             { verify(exactly = 1) { paymentGateway.request(orderId, Money(1_000), card) } },
@@ -102,7 +103,7 @@ class OrderPaymentIntegrationTest @Autowired constructor(
         val orderId = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, 2))).id
         every { paymentGateway.request(any(), any(), any()) } throws IllegalStateException("PG 응답 없음")
 
-        runCatching { orderFacade.confirm(userId, orderId, card) }
+        runCatching { orderFacade.confirm(userId, orderId, PaymentMethod.CARD, card) }
 
         assertAll(
             { assertThat(productJpaRepository.findById(product.id).get().stock.quantity).isEqualTo(5) },

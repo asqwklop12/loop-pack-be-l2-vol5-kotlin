@@ -11,8 +11,9 @@ class OrderV1Dto {
     }
 
     data class ConfirmRequest(
-        val cardType: String,
-        val cardNo: String,
+        val method: String,
+        val cardType: String? = null,
+        val cardNo: String? = null,
     )
 
     data class OrderResponse(

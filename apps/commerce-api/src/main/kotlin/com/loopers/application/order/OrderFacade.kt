@@ -3,8 +3,10 @@ package com.loopers.application.order
 import com.loopers.domain.order.OrderCommand
 import com.loopers.domain.order.OrderLine
 import com.loopers.domain.order.OrderService
+import com.loopers.application.payment.PaymentProcessor
+import com.loopers.domain.payment.PaymentCommand
 import com.loopers.domain.payment.CardInfo
-import com.loopers.domain.payment.PaymentGateway
+import com.loopers.domain.payment.PaymentMethod
 import com.loopers.domain.point.PointService
 import com.loopers.domain.product.ProductService
 import org.springframework.stereotype.Component
@@ -21,7 +23,7 @@ class OrderFacade(
     private val orderService: OrderService,
     private val productService: ProductService,
     private val pointService: PointService,
-    private val paymentGateway: PaymentGateway,
+    private val paymentProcessor: PaymentProcessor,
 ) {
     /**
      * 주문서만 만든다. 단가는 이 시점의 상품 가격으로 고정한다. 나중에는 알아낼 수 없는 값이다.
@@ -44,7 +46,12 @@ class OrderFacade(
      * 상품은 **여기서 다시 확인한다.** 주문서를 만든 뒤 상품이 내려갈 수 있다.
      */
     @Transactional
-    fun confirm(userId: Long, orderId: Long, card: CardInfo? = null): OrderInfo {
+    fun confirm(
+        userId: Long,
+        orderId: Long,
+        method: PaymentMethod = PaymentMethod.POINT,
+        card: CardInfo? = null,
+    ): OrderInfo {
         val order = orderService.get(userId, orderId)
         order.requireDraft()
 
@@ -53,11 +60,15 @@ class OrderFacade(
             productService.decreaseStock(product, line.quantity)
         }
 
-        if (card == null) {
-            pointService.pay(userId, order.totalAmount)
-        } else {
-            paymentGateway.request(order.id, order.totalAmount, card)
-        }
+        paymentProcessor.pay(
+            PaymentCommand(
+                userId = userId,
+                orderId = order.id,
+                amount = order.totalAmount,
+                method = method,
+                card = card,
+            ),
+        )
 
         return OrderInfo.from(orderService.confirm(order))
     }
