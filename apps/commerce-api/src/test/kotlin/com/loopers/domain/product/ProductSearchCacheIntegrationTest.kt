@@ -38,6 +38,7 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
     private val likeJpaRepository: LikeJpaRepository,
+    private val productStatsRepository: ProductStatsRepository,
     private val databaseCleanUp: DatabaseCleanUp,
     private val redisCleanUp: RedisCleanUp,
 ) {
@@ -67,8 +68,14 @@ class ProductSearchCacheIntegrationTest @Autowired constructor(
      */
     private var userSeq = 0L
 
+    /**
+     * 인기순은 하루 한 번 집계한 값을 읽는다. 좋아요만 만들고 조회하면 집계 전이라
+     * 전부 0 이고 id 순으로 밀린다. 실제 흐름대로 집계까지 돌린다.
+     */
     private fun liked(productId: Long, times: Int) {
         repeat(times) { likeJpaRepository.save(Like(userId = ++userSeq, productId = productId)) }
+
+        productStatsRepository.replaceAllFromLikes()
     }
 
     @DisplayName("인기순을 조회할 때, ")

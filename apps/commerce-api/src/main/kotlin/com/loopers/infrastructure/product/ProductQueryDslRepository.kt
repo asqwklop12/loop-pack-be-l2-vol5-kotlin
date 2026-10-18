@@ -1,11 +1,11 @@
 package com.loopers.infrastructure.product
 
-import com.loopers.domain.like.QLike
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductSearch
 import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.ProductStatus
 import com.loopers.domain.product.QProduct
+import com.loopers.domain.product.QProductStats
 import com.querydsl.core.types.dsl.BooleanExpression
 import com.querydsl.jpa.impl.JPAQueryFactory
 import org.springframework.stereotype.Component
@@ -15,7 +15,7 @@ class ProductQueryDslRepository(
     private val queryFactory: JPAQueryFactory,
 ) {
     private val product = QProduct.product
-    private val like = QLike.like
+    private val productStats = QProductStats.productStats
 
     fun search(search: ProductSearch): List<Product> {
         return when (search.sort) {
@@ -49,15 +49,18 @@ class ProductQueryDslRepository(
     }
 
     /**
-     * 좋아요 수는 관계에서 센다. 관계가 없는 상품도 나와야 하므로 left join 이다.
+     * 좋아요 수는 하루 한 번 집계한 `product_stats` 에서 읽는다. 관계를 세지 않는다.
+     *
+     * 좋아요가 한 번도 없는 상품은 집계에 행이 없으므로 left join 이고, 정렬에서는
+     * 0 으로 본다. 집계를 쓴다고 이 쿼리가 빨라지지는 않는다 — 느린 이유는 세는 것이
+     * 아니라 판매중 상품 전체를 정렬하는 것이라, 상위 구간은 캐시가 계속 맡는다.
      */
     private fun searchByLikes(search: ProductSearch): List<Product> {
         return queryFactory
             .selectFrom(product)
-            .leftJoin(like).on(like.productId.eq(product.id))
+            .leftJoin(productStats).on(productStats.productId.eq(product.id))
             .where(notDeleted(), selling(), brandEq(search.brandId))
-            .groupBy(product.id)
-            .orderBy(like.count().desc(), product.id.desc())
+            .orderBy(productStats.likeCount.coalesce(0L).desc(), product.id.desc())
             .offset(search.offset)
             .limit(search.size.toLong())
             .fetch()
