@@ -125,7 +125,7 @@ export function payment() {
   const orderId = JSON.parse(created.body).data.id;
   const confirmed = http.post(
     `${BASE}/api/v1/orders/${orderId}/confirm`,
-    JSON.stringify({ cardType: CARD_TYPE, cardNo: CARD_NO }),
+    JSON.stringify({ method: 'CARD', cardType: CARD_TYPE, cardNo: CARD_NO }),
     { ...headers(userId), tags: { step: 'confirm', name: 'POST /api/v1/orders/{id}/confirm' } },
   );
   confirmLatency.add(confirmed.timings.duration);
