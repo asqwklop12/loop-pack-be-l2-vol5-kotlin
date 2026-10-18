@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="PG 가 느려지면 결제와 무관한 상품 목록까지 15초가 된다. 서킷이 지키는 것은 결제가 아니라 나머지 서비스다.">
+<title>서킷이 지키는 것</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #f7f8fa;
+    --card: #ffffff;
+    --ink: #14161a;
+    --ink-2: #41485a;
+    --muted: #5c6370;
+    --rule: #e2e5ea;
+    --rule-soft: #eef0f4;
+    --ok: #1baf7a;
+    --slow: #c23934;
+    --down: #2a78d6;
+    --slow-soft: #fdf1f0;
+    --shadow: 0 1px 2px rgba(20, 22, 26, .06), 0 8px 24px -16px rgba(20, 22, 26, .18);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #15171c; --card: #1c1f26; --ink: #eef1f5; --ink-2: #c3cad6;
+      --muted: #98a1b0; --rule: #2b313c; --rule-soft: #232832;
+      --ok: #199e70; --slow: #e66767; --down: #3987e5; --slow-soft: #2a1d1f; --shadow: none;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #15171c; --card: #1c1f26; --ink: #eef1f5; --ink-2: #c3cad6;
+    --muted: #98a1b0; --rule: #2b313c; --rule-soft: #232832;
+    --ok: #199e70; --slow: #e66767; --down: #3987e5; --slow-soft: #2a1d1f; --shadow: none;
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Newsreader", ui-serif, Georgia, serif;
+    font-size: 17px; line-height: 1.6;
+    padding-inline: 20px; padding-block: 48px 72px;
+  }
+  img { max-width: 100%; }
+  [hidden] { display: none !important; }
+
+  .wrap { max-width: 1020px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px; }
+  .prose { max-width: 64ch; }
+
+  h1, h2, .eyebrow { font-family: "Archivo", system-ui, sans-serif; }
+  h1 { font-size: clamp(32px, 5vw, 46px); line-height: 1.08; letter-spacing: -.02em; font-weight: 700; margin: 0; text-wrap: balance; }
+  h2 { font-size: 23px; letter-spacing: -.01em; font-weight: 600; margin: 0 0 6px; text-wrap: balance; }
+  p { margin: 0 0 14px; }
+  p:last-child { margin-bottom: 0; }
+  strong { font-weight: 500; color: var(--ink); }
+
+  code, td, th { font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+  code { font-size: .88em; background: var(--rule-soft); padding: 1px 5px; border-radius: 3px; }
+  .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+
+  .runhead {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 12.5px; line-height: 1.9; color: var(--ink-2);
+    border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule); padding-block: 10px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0 28px;
+  }
+  .runhead span { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dotted var(--rule); }
+  .runhead b { font-weight: 500; color: var(--ink); }
+
+  .lede { font-size: 20px; line-height: 1.5; color: var(--ink-2); max-width: 60ch; }
+
+  section { display: flex; flex-direction: column; gap: 16px; }
+
+  figure { margin: 0; background: var(--card); border: 1px solid var(--rule); border-radius: 8px; padding: 20px 18px 14px; box-shadow: var(--shadow); }
+  figcaption { font-size: 14px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 14px; }
+  .legend i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; margin-right: 7px; vertical-align: -1px; }
+  .legend span { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--ink-2); }
+
+  .shop { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  .shop > div { background: var(--card); padding: 20px 18px; }
+  .shop > div.hot { background: var(--slow-soft); }
+  .shop .state { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; font-weight: 600; margin-bottom: 10px; }
+  .shop .big { font-family: "Archivo", sans-serif; font-size: 32px; font-weight: 700; letter-spacing: -.02em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .shop .unit { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+  .shop .what { font-size: 13px; color: var(--muted); margin-top: 4px; font-family: "IBM Plex Mono", monospace; }
+  .shop .sub { font-size: 14.5px; color: var(--ink-2); margin-top: 12px; line-height: 1.45; }
+  .is-ok { color: var(--ok); } .is-slow { color: var(--slow); } .is-down { color: var(--down); }
+
+  .mech { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; }
+  .mech > div { background: var(--card); padding: 16px 18px; display: grid; grid-template-columns: 116px 1fr; gap: 16px; align-items: start; }
+  .mech .who { font-family: "IBM Plex Mono", monospace; font-size: 13px; font-weight: 600; }
+  .mech p { font-size: 15.5px; line-height: 1.55; }
+  .mech .calc { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--rule-soft); }
+  th { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); background: var(--rule-soft); }
+  td:first-child, th:first-child, td:nth-child(2), th:nth-child(2) { text-align: left; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tr.hot td { background: var(--slow-soft); }
+  caption { caption-side: bottom; padding: 10px 12px; font-size: 13px; color: var(--muted); text-align: left; }
+
+  footer { border-top: 1px solid var(--rule); padding-top: 18px; font-size: 13.5px; color: var(--muted); }
+
+  #tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--ink); color: var(--ground);
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; line-height: 1.5;
+    padding: 7px 10px; border-radius: 5px; z-index: 10; max-width: 270px;
+  }
+  .bar { transition: opacity .1s; }
+  .bar:hover { opacity: .78; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+  @media (max-width: 560px) { .mech > div { grid-template-columns: 1fr; gap: 4px; } }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header style="display:flex; flex-direction:column; gap:18px;">
+    <div class="eyebrow">5주차 · 장애 주입 측정</div>
+    <h1>서킷이 지키는 것</h1>
+    <p class="lede">PG 가 느려지면 결제만 실패하는 것이 아니다.
+      <strong>상품 목록이 15초가 된다.</strong> 결제를 누르지도 않은 사람까지 쇼핑몰을 못 쓴다.</p>
+    <div class="runhead">
+      <span>부하 <b>VU 100 · 1,000 · 10,000 × 30초</b></span>
+      <span>PG 상태 <b>정상 · pause · stop</b></span>
+      <span>대상 <b>commerce-api :8099</b></span>
+      <span>PG <b>pg-simulator 0.4.0</b></span>
+      <span>톰캣 <b>동시 처리 200</b></span>
+      <span>커넥션 풀 <b>Hikari 40 · timeout 3s</b></span>
+      <span>PG 타임아웃 <b>connect 1s · read 3s</b></span>
+      <span>결제 수단 <b>카드 · 정상 카드</b></span>
+    </div>
+  </header>
+
+  <section>
+    <div class="prose">
+      <h2>VU 1,000 에서 쇼핑몰이 어떤 꼴인가</h2>
+      <p>세 경우 모두 <strong>결제는 똑같이 전멸</strong>한다 — PG 가 아프면 결제가 안 되는 건 당연하다.
+        볼 것은 <strong>결제를 누르지 않은 사람</strong>이 겪는 화면이다. 아래는 상품 목록
+        <code>GET /api/v1/products</code> 의 응답 중앙값이다.</p>
+    </div>
+    <div class="shop">
+      <div>
+        <div class="state is-ok">PG 정상</div>
+        <div class="big is-ok">3,046<span class="unit">ms</span></div>
+        <div class="what">상품 목록 · 결제 15,673건 성공</div>
+        <p class="sub">부하만으로 이미 3초다. 이건 PG 탓이 아니라 우리 용량 문제다.</p>
+      </div>
+      <div class="hot">
+        <div class="state is-slow">PG 느림 · docker pause</div>
+        <div class="big is-slow">15,576<span class="unit">ms</span></div>
+        <div class="what">상품 목록 · 결제 0건 성공</div>
+        <p class="sub"><strong>5배 더 느려진다.</strong> 상품을 구경하던 사람도 화면이 안 뜬다.
+          결제 장애가 쇼핑몰 전체 장애가 되는 순간이다.</p>
+      </div>
+      <div>
+        <div class="state is-down">PG 죽음 · docker stop</div>
+        <div class="big is-down">529<span class="unit">ms</span></div>
+        <div class="what">상품 목록 · 결제 0건 성공</div>
+        <p class="sub">PG 가 완전히 죽었는데 상품 목록은 <strong>정상일 때보다 빠르다.</strong>
+          결제가 자원을 안 쓰니 나머지가 넉넉해진 것이다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>결제를 안 쓰는 기능까지 같이 죽는다</h2>
+    </div>
+    <figure>
+      <div class="legend">
+        <span><i style="background:var(--ok)"></i>PG 정상</span>
+        <span><i style="background:var(--slow)"></i>PG 느림 · pause</span>
+        <span><i style="background:var(--down)"></i>PG 죽음 · stop</span>
+      </div>
+      <svg id="c1" viewBox="0 0 960 350" role="img" aria-labelledby="c1t"></svg>
+      <figcaption id="c1t">상품 목록 응답 중앙값(로그 축, 한 칸이 10배). 점선은 한가할 때의 540ms.
+        <strong>PG 가 죽은 쪽이 느린 쪽보다 30배 빠르다</strong> — 같은 PG 장애인데.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>왜 이런 일이 생기나 — 자리가 200개뿐이다</h2>
+      <p>톰캣은 동시에 <strong>200개</strong>만 처리한다. 결제가 그 자리를 얼마나 오래 차지하느냐가
+        나머지 기능의 운명을 정한다. 필요한 자리 수는 간단히 나온다 —
+        <strong>초당 처리 건수 × 한 건이 붙잡는 시간</strong>.</p>
+    </div>
+    <figure>
+      <svg id="c2" viewBox="0 0 960 340" role="img" aria-labelledby="c2t"></svg>
+      <figcaption id="c2t">결제가 상시 점유하는 자리 수. 점선이 톰캣의 한계 200이다.
+        <strong>죽음일 때만 선 아래</strong>로 떨어지고, 그때만 다른 기능이 자리를 얻는다.
+        VU 10,000 은 요청 대부분이 접속 단계에서 거부돼 값이 왜곡돼 있다.</figcaption>
+    </figure>
+    <div class="mech">
+      <div>
+        <div class="who is-slow">느림</div>
+        <p>응답이 안 오니 스레드가 <strong>타임아웃까지 꼬박 기다린다.</strong>
+          그 동안 <code>@Transactional</code> 안이라 DB 커넥션도 함께 쥐고 있다.
+          자리는 200개인데 결제가 856개를 요구하니, 상품 목록은 줄조차 설 수 없다.</p>
+        <div class="calc">58건/s × 14.9초 = <b>856자리</b> 필요 · 가용 200</div>
+      </div>
+      <div>
+        <div class="who is-down">죽음</div>
+        <p>연결이 <strong>즉시 거부</strong>된다. 결제는 똑같이 전부 실패하지만 스레드가 0.25초 만에
+          돌아오고 DB 커넥션도 바로 놓는다. 결제가 쓰는 자리가 93개로 줄어 107자리가 남는다.</p>
+        <div class="calc">371건/s × 0.25초 = <b>93자리</b> 필요 · 가용 200</div>
+      </div>
+      <div>
+        <div class="who">서킷</div>
+        <p>열린 서킷은 PG 를 아예 부르지 않고 즉시 실패시킨다. 즉 <strong>점유 시간을 0 에 가깝게</strong>
+          만들어 위의 느림을 아래의 죽음으로 옮기는 장치다.
+          <strong>서킷은 결제를 살려주지 않는다</strong> — PG 가 아프면 결제는 어차피 실패한다.
+          지키는 것은 결제가 아니라 상품 목록 · 좋아요 · 브랜드, 즉 <strong>결제 아닌 전부</strong>다.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>측정값 전체</h2>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <caption>각 30초. 상품 목록은 DB 를 쓰는 조회, 404 는 DB 를 타지 않는 빈 요청이다. ms 단위.</caption>
+        <thead>
+          <tr>
+            <th>VU</th><th>PG</th><th>결제 확정</th><th>5xx</th><th>결제 med</th>
+            <th>상품목록 med</th><th>상품목록 p99</th><th>404 med</th>
+            <th>필요 자리</th><th>busy</th><th>커넥션 획득 실패</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="prose">
+      <h2>서킷만으로는 안 되는 것</h2>
+      <p>표의 <strong>PG 정상 · VU 1,000</strong> 줄을 보면 상품 목록이 이미 3,046ms 다.
+        필요 자리도 506 으로 200 을 넘는다. PG 는 멀쩡한데 부하만으로 넘친 것이고,
+        <strong>서킷은 이것을 고치지 않는다.</strong></p>
+      <p>그리고 서킷은 임계값을 넘어야 열린다. PG 가 느려진 직후 몇 초는 아직 닫혀 있고,
+        그 구간은 위의 느림 그대로다. 같은 피해를 <strong>항상</strong> 줄이는 수단이 둘 더 있다.</p>
+    </div>
+    <div class="mech">
+      <div>
+        <div class="who">트랜잭션 분리</div>
+        <p>PG 호출을 <code>@Transactional</code> 밖으로 빼면 기다리는 동안 DB 커넥션은 놓는다.
+          자리 하나가 묶는 자원이 줄어든다.</p>
+      </div>
+      <div>
+        <div class="who">타임아웃 축소</div>
+        <p>read 3초를 500ms 로 줄이면 한 건이 붙잡는 시간이 6분의 1이 된다.
+          필요 자리도 856에서 그만큼 내려간다.</p>
+      </div>
+      <div>
+        <div class="who">서킷</div>
+        <p>위 둘로도 남는 피해를 끊는다. 대신 <strong>무엇을 실패로 셀지</strong>를 정해야 한다 —
+          타임아웃과 연결 거부는 PG 가 아픈 것이지만, 한도초과 거절과 금액 불일치 <code>409</code> 는
+          <strong>PG 가 건강하다는 증거</strong>다. 뒤엣것을 세면 한도를 넘긴 사용자들 때문에 서킷이 열린다.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    측정 <code>docs/week5/run-fault-injection.sh</code> ·
+    부하 <code>docs/week5/k6-payment-ramp.js</code> ·
+    PG 가 건강할 때의 기준선 <code>docs/week5/circuit-baseline.html</code>
+    <br>
+    한 번의 표본이다. 처리량은 비슷하게 재현되지만 p99 는 표본마다 크게 흔들린다.
+    서킷 · 트랜잭션 분리 · 타임아웃 축소 중 아직 아무것도 적용하지 않은 상태의 값이다.
+  </footer>
+</div>
+
+<div id="tip" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  var DURATION = 30;
+  var THREADS = 200;
+  var IDLE_PRODUCTS = 540;
+  var data = [
+    { vu: "100", rows: {
+      healthy: { ok: 15466, broken: 0,     cmed: 97,    hmed: 1634,  hp99: 2209,  lmed: 1,     busy: 110, toErr: 0 },
+      slow:    { ok: 0,     broken: 596,   cmed: 4642,  hmed: 7162,  hp99: 10467, lmed: 2,     busy: 139, toErr: 202 },
+      down:    { ok: 0,     broken: 8327,  cmed: 33,    hmed: 522,   hp99: 1346,  lmed: 2,     busy: 107, toErr: 0 } } },
+    { vu: "1,000", rows: {
+      healthy: { ok: 15673, broken: 0,     cmed: 969,   hmed: 3046,  hp99: 5046,  lmed: 832,   busy: 200, toErr: 0 },
+      slow:    { ok: 0,     broken: 1730,  cmed: 14851, hmed: 15576, hp99: 24126, lmed: 11508, busy: 200, toErr: 1546 },
+      down:    { ok: 0,     broken: 11122, cmed: 251,   hmed: 529,   hp99: 1769,  lmed: 2,     busy: 200, toErr: 0 } } },
+    { vu: "10,000", rows: {
+      healthy: { ok: 351,   broken: 2,     cmed: 70,    hmed: 558,   hp99: 16421, lmed: 584,   busy: 54,  toErr: 116 },
+      slow:    { ok: 0,     broken: 706,   cmed: 6140,  hmed: 525,   hp99: 5081,  lmed: 520,   busy: 200, toErr: 789 },
+      down:    { ok: 0,     broken: 1692,  cmed: 92,    hmed: 464,   hp99: 4598,  lmed: 462,   busy: 15,  toErr: 1 } } }
+  ];
+  var states = [
+    { key: "healthy", label: "PG 정상",       color: "var(--ok)" },
+    { key: "slow",    label: "PG 느림 pause", color: "var(--slow)" },
+    { key: "down",    label: "PG 죽음 stop",  color: "var(--down)" }
+  ];
+  function perSecond(r) { return (r.ok + r.broken) / DURATION; }
+  function seats(r) { return perSecond(r) * (r.cmed / 1000); }
+
+  var NS = "http://www.w3.org/2000/svg";
+  function el(name, attrs, text) {
+    var n = document.createElementNS(NS, name);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    return n;
+  }
+  function fmt(n) { return Math.round(n).toLocaleString("en-US"); }
+  function barPath(x, y, w, h, r) {
+    r = Math.min(r, w / 2, Math.max(h, 0.01));
+    return "M" + x + "," + (y + h) + "V" + (y + r) +
+           "a" + r + "," + r + " 0 0 1 " + r + ",-" + r +
+           "h" + (w - 2 * r) + "a" + r + "," + r + " 0 0 1 " + r + "," + r + "V" + (y + h) + "Z";
+  }
+  var tip = document.getElementById("tip");
+  function bindTip(node, html) {
+    node.addEventListener("pointerenter", function () { tip.innerHTML = html; tip.style.opacity = "1"; });
+    node.addEventListener("pointermove", function (e) {
+      tip.style.left = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 10) + "px";
+      tip.style.top = Math.max(e.clientY - tip.offsetHeight - 12, 8) + "px";
+    });
+    node.addEventListener("pointerleave", function () { tip.style.opacity = "0"; });
+  }
+  function draw(name, fn) {
+    try { fn(); } catch (e) { console.error("차트 실패: " + name, e); }
+  }
+
+  function groupChart(opts) {
+    var svg = document.getElementById(opts.id);
+    var L = 62, R = 924, T = 36, B = 272;
+    var y = opts.log
+      ? function (v) { return B - (Math.log10(Math.max(v, 1)) / Math.log10(opts.top)) * (B - T); }
+      : function (v) { return B - (Math.min(v, opts.top) / opts.top) * (B - T); };
+
+    opts.ticks.forEach(function (t) {
+      svg.appendChild(el("line", { x1: L, x2: R, y1: y(t), y2: y(t),
+        stroke: "var(--rule)", "stroke-width": t === opts.ticks[0] ? 1.5 : 1 }));
+      svg.appendChild(el("text", { x: L - 10, y: y(t) + 4, "text-anchor": "end", fill: "var(--muted)",
+        "font-size": 11.5, "font-family": "IBM Plex Mono, monospace" }, fmt(t)));
+    });
+    svg.appendChild(el("text", { x: L - 10, y: T - 14, "text-anchor": "end", fill: "var(--muted)",
+      "font-size": 11, "font-family": "Archivo, sans-serif", "letter-spacing": ".08em" }, opts.unit));
+
+    var gw = (R - L) / data.length, bw = 58, gap = 8;
+    var groupW = bw * states.length + gap * (states.length - 1);
+
+    data.forEach(function (group, i) {
+      var gx = L + gw * i + (gw - groupW) / 2;
+      states.forEach(function (st, j) {
+        var r = group.rows[st.key];
+        var v = opts.pick(r);
+        var bx = gx + j * (bw + gap), by = y(v), h = B - by;
+        var p = el("path", { d: barPath(bx, by, bw, h, 4), fill: st.color, class: "bar",
+          stroke: "var(--card)", "stroke-width": 2 });
+        bindTip(p, "<b>" + st.label + "</b> · VU " + group.vu + "<br>" + opts.tip(r));
+        svg.appendChild(p);
+        svg.appendChild(el("text", { x: bx + bw / 2, y: by - 7, "text-anchor": "middle",
+          fill: "var(--ink-2)", "font-size": 11, "font-family": "IBM Plex Mono, monospace" }, fmt(v)));
+      });
+      svg.appendChild(el("text", { x: L + gw * i + gw / 2, y: B + 22, "text-anchor": "middle",
+        fill: "var(--ink-2)", "font-size": 13, "font-family": "IBM Plex Mono, monospace" }, "VU " + group.vu));
+    });
+    return { svg: svg, L: L, R: R, T: T, B: B, gw: gw, y: y };
+  }
+
+  draw("상품 목록", function () {
+    var c = groupChart({
+      id: "c1", log: true, top: 30000, ticks: [1, 10, 100, 1000, 10000],
+      unit: "상품 목록 중앙값 ms",
+      pick: function (r) { return r.hmed; },
+      tip: function (r) {
+        return "상품 목록 중앙값 " + fmt(r.hmed) + "ms<br>p99 " + fmt(r.hp99) +
+          "ms<br>결제 확정 " + fmt(r.ok) + "건";
+      }
+    });
+    c.svg.appendChild(el("line", { x1: c.L, x2: c.R, y1: c.y(IDLE_PRODUCTS), y2: c.y(IDLE_PRODUCTS),
+      stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "2 5" }));
+    c.svg.appendChild(el("text", { x: c.R + 6, y: c.y(IDLE_PRODUCTS) + 4, fill: "var(--muted)",
+      "font-size": 10.5, "font-family": "IBM Plex Mono, monospace" }, "540ms"));
+  });
+
+  draw("자리", function () {
+    var c = groupChart({
+      id: "c2", log: false, top: 900, ticks: [0, 200, 400, 600, 800],
+      unit: "결제가 쓰는 자리",
+      pick: seats,
+      tip: function (r) {
+        return "필요 자리 " + fmt(seats(r)) + "개 / 200<br>" +
+          fmt(perSecond(r)) + "건/s × " + (r.cmed / 1000).toFixed(2) + "초";
+      }
+    });
+    c.svg.appendChild(el("line", { x1: c.L, x2: c.R, y1: c.y(THREADS), y2: c.y(THREADS),
+      stroke: "var(--ink)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }));
+    c.svg.appendChild(el("text", { x: c.R + 6, y: c.y(THREADS) + 4, fill: "var(--ink)",
+      "font-size": 10.5, "font-weight": 600, "font-family": "IBM Plex Mono, monospace" }, "200"));
+  });
+
+  draw("표", function () {
+    var tbody = document.getElementById("rows");
+    data.forEach(function (group) {
+      states.forEach(function (st) {
+        var r = group.rows[st.key];
+        var tr = document.createElement("tr");
+        if (st.key === "slow") tr.className = "hot";
+        [group.vu, st.label, fmt(r.ok), fmt(r.broken), fmt(r.cmed), fmt(r.hmed), fmt(r.hp99),
+         fmt(r.lmed), fmt(seats(r)), r.busy + "/200", fmt(r.toErr)
+        ].forEach(function (v) {
+          var td = document.createElement("td");
+          td.textContent = v;
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    });
+  });
+})();
+</script>
+
+</body>
+</html>
