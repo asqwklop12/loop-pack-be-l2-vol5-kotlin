@@ -21,6 +21,7 @@ class PgTransactionStoreTest {
         orderId: Long,
         at: Instant = now,
         cardNo: String = "1234-5678-9814-1451",
+        amount: BigInteger = this.amount,
     ) = store.accept(
         PgTransactionStore.Accept(
             orderId = orderId,
@@ -62,6 +63,29 @@ class PgTransactionStoreTest {
                 { assertThat(second.transaction.transactionKey).isEqualTo(first.transaction.transactionKey) },
                 { assertThat(second.transaction.requestedAt).isEqualTo(now) },
             )
+        }
+
+        @DisplayName("같은 주문에 다른 금액으로 접수하면 금액 불일치로 표시된다.")
+        @Test
+        fun flagsAmountMismatch() {
+            accept(orderId = 1L, amount = BigInteger.valueOf(50_000))
+
+            val again = accept(orderId = 1L, amount = BigInteger.valueOf(99_999))
+
+            assertAll(
+                { assertThat(again.amountMismatch).isTrue() },
+                { assertThat(again.isNew).isFalse() },
+                { assertThat(again.transaction.amount).isEqualTo(BigInteger.valueOf(50_000)) },
+                { assertThat(store.findByOrderId(1L)?.amount).isEqualTo(BigInteger.valueOf(50_000)) },
+            )
+        }
+
+        @DisplayName("같은 주문에 같은 금액이면 금액 불일치가 아니다.")
+        @Test
+        fun allowsSameAmount() {
+            accept(orderId = 1L)
+
+            assertThat(accept(orderId = 1L).amountMismatch).isFalse()
         }
 
         @DisplayName("다른 주문은 서로 다른 거래키를 받는다.")

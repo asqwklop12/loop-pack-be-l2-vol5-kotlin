@@ -41,6 +41,14 @@ class PgV1Controller(
             ),
         )
 
+        if (accepted.amountMismatch) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "이미 다른 금액으로 접수된 주문입니다. " +
+                    "[orderId = ${request.orderId}, 접수된 금액 = ${accepted.transaction.amount}, 요청 금액 = ${request.amount}]",
+            )
+        }
+
         if (accepted.isNew) {
             callbackSender.scheduleSettlement(accepted.transaction.transactionKey)
         }

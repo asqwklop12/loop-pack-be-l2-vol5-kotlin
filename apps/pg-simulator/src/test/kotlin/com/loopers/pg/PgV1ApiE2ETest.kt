@@ -70,6 +70,35 @@ class PgV1ApiE2ETest @Autowired constructor(
             )
         }
 
+        @DisplayName("같은 주문에 다른 금액으로 접수하면 409 다.")
+        @Test
+        fun rejectsAmountMismatch() {
+            request(orderId = 1006L, amount = BigInteger.valueOf(50_000))
+
+            val response = testRestTemplate.postForEntity(
+                "/api/v1/payments",
+                PgV1Dto.PaymentRequest(
+                    orderId = 1006L,
+                    amount = BigInteger.valueOf(99_999),
+                    cardType = CardType.SAMSUNG,
+                    cardNo = "1234-5678-9814-1451",
+                ),
+                String::class.java,
+            )
+
+            assertAll(
+                { assertThat(response.statusCode).isEqualTo(HttpStatus.CONFLICT) },
+                {
+                    assertThat(
+                        testRestTemplate.getForEntity(
+                            "/api/v1/payments?orderId=1006",
+                            PgV1Dto.PaymentResponse::class.java,
+                        ).body?.amount,
+                    ).isEqualTo(BigInteger.valueOf(50_000))
+                },
+            )
+        }
+
         @DisplayName("카드번호가 짧으면 거절한다.")
         @Test
         fun rejectsMalformedCardNo() {

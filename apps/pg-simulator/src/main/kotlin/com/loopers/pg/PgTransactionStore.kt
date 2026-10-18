@@ -30,7 +30,13 @@ class PgTransactionStore {
             generated
         }
 
-        return Accepted(transaction = byKey.getValue(key), isNew = createdKey != null)
+        val transaction = byKey.getValue(key)
+
+        return Accepted(
+            transaction = transaction,
+            isNew = createdKey != null,
+            amountMismatch = createdKey == null && transaction.amount != command.amount,
+        )
     }
 
     fun find(transactionKey: String): PgTransaction? = byKey[transactionKey]
@@ -51,5 +57,6 @@ class PgTransactionStore {
     data class Accepted(
         val transaction: PgTransaction,
         val isNew: Boolean,
+        val amountMismatch: Boolean = false,
     )
 }
