@@ -13,6 +13,7 @@ import kotlin.random.Random
 class PgCallbackSender(
     private val properties: PgSimulatorProperties,
     private val store: PgTransactionStore,
+    private val declineRoulette: DeclineRoulette,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val restClient = RestClient.create()
@@ -47,7 +48,8 @@ class PgCallbackSender(
                         orderId = settled.orderId,
                         status = settled.status,
                         amount = settled.amount.toString(),
-                        declineReason = settled.declineReason,
+                        declineCode = settled.declineReason?.name,
+                        declineReason = settled.declineReason?.message,
                         settledAt = settled.settledAt,
                     ),
                 )
@@ -58,22 +60,22 @@ class PgCallbackSender(
         }
     }
 
-    private fun decide(pending: PgTransaction): Outcome =
-        when (pending.testCard) {
-            TestCard.DECLINED -> Outcome(PgStatus.FAILED, "한도초과")
-            else -> if (Random.nextDouble() < properties.declineRate) {
-                Outcome(PgStatus.FAILED, "승인거절")
-            } else {
-                Outcome(PgStatus.SUCCESS, null)
-            }
+    private fun decide(pending: PgTransaction): Outcome {
+        if (pending.testCard == TestCard.DECLINED) {
+            return Outcome(PgStatus.FAILED, DeclineReason.LIMIT_EXCEEDED)
         }
+
+        return declineRoulette.spin()
+            ?.let { Outcome(PgStatus.FAILED, it) }
+            ?: Outcome(PgStatus.SUCCESS, null)
+    }
 
     private fun shouldDropCallback(settled: PgTransaction): Boolean =
         settled.testCard == TestCard.SILENT || Random.nextDouble() < properties.callbackDropRate
 
     private data class Outcome(
         val status: PgStatus,
-        val reason: String?,
+        val reason: DeclineReason?,
     )
 
     data class PgCallback(
@@ -81,6 +83,7 @@ class PgCallbackSender(
         val orderId: Long,
         val status: PgStatus,
         val amount: String,
+        val declineCode: String?,
         val declineReason: String?,
         val settledAt: Instant?,
     )

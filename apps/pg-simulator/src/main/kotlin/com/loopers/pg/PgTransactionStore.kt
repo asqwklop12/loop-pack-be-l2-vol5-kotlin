@@ -37,7 +37,7 @@ class PgTransactionStore {
 
     fun findByOrderId(orderId: Long): PgTransaction? = keyByOrderId[orderId]?.let { byKey[it] }
 
-    fun settle(transactionKey: String, next: PgStatus, at: Instant, reason: String? = null): PgTransaction? =
+    fun settle(transactionKey: String, next: PgStatus, at: Instant, reason: DeclineReason? = null): PgTransaction? =
         byKey.compute(transactionKey) { _, current -> current?.settle(next, at, reason) }
 
     data class Accept(

@@ -46,17 +46,18 @@ class PgCallbackSenderTest {
     fun tearDown() = server.stop(0)
 
     private fun sender(
-        declineRate: Double = 0.0,
+        decline: Map<DeclineReason, Double> = emptyMap(),
         callbackDropRate: Double = 0.0,
-    ) = PgCallbackSender(
-        properties = PgSimulatorProperties(
+    ): PgCallbackSender {
+        val properties = PgSimulatorProperties(
             callbackUrl = "http://localhost:${server.address.port}/callback",
             callbackDelay = Duration.ofMillis(50),
-            declineRate = declineRate,
             callbackDropRate = callbackDropRate,
-        ),
-        store = store,
-    )
+            decline = decline,
+        )
+
+        return PgCallbackSender(properties, store, DeclineRoulette(properties))
+    }
 
     private fun acceptedKey(orderId: Long, cardNo: String = "1234-5678-9814-1451") =
         store.accept(
@@ -87,17 +88,20 @@ class PgCallbackSenderTest {
         )
     }
 
-    @DisplayName("거절률이 1이면 FAILED 로 확정되고 콜백도 FAILED 로 간다.")
+    @DisplayName("거절 확률이 1이면 그 사유로 FAILED 가 되고 콜백에 코드와 사유가 실린다.")
     @Test
     fun sendsDeclinedCallback() {
         val key = acceptedKey(2L)
 
-        sender(declineRate = 1.0).scheduleSettlement(key)
+        sender(decline = mapOf(DeclineReason.INSUFFICIENT_BALANCE to 1.0)).scheduleSettlement(key)
 
         assertThat(arrived.await(5, TimeUnit.SECONDS)).isTrue()
         assertAll(
             { assertThat(received.first()["status"]).isEqualTo("FAILED") },
+            { assertThat(received.first()["declineCode"]).isEqualTo("INSUFFICIENT_BALANCE") },
+            { assertThat(received.first()["declineReason"]).isEqualTo("잔액부족") },
             { assertThat(store.find(key)?.status).isEqualTo(PgStatus.FAILED) },
+            { assertThat(store.find(key)?.declineReason).isEqualTo(DeclineReason.INSUFFICIENT_BALANCE) },
         )
     }
 
@@ -132,7 +136,7 @@ class PgCallbackSenderTest {
         )
     }
 
-    @DisplayName("한도초과 카드는 거절되고 거절 사유가 콜백에 담긴다.")
+    @DisplayName("한도초과 카드는 확률과 무관하게 거절된다.")
     @Test
     fun declinesTestCard() {
         val key = acceptedKey(5L, cardNo = "1234-5678-9814-0000")
@@ -142,6 +146,7 @@ class PgCallbackSenderTest {
         assertThat(arrived.await(5, TimeUnit.SECONDS)).isTrue()
         assertAll(
             { assertThat(received.first()["status"]).isEqualTo("FAILED") },
+            { assertThat(received.first()["declineCode"]).isEqualTo("LIMIT_EXCEEDED") },
             { assertThat(received.first()["declineReason"]).isEqualTo("한도초과") },
             { assertThat(store.find(key)?.status).isEqualTo(PgStatus.FAILED) },
         )
@@ -161,17 +166,18 @@ class PgCallbackSenderTest {
         )
     }
 
-    @DisplayName("테스트 카드가 아니면 확률 설정을 따른다.")
+    @DisplayName("거절 확률이 모두 0이면 승인되고 거절 사유가 없다.")
     @Test
-    fun fallsBackToRate() {
+    fun approvesWhenNoDeclineConfigured() {
         val key = acceptedKey(7L)
 
-        sender(declineRate = 1.0).scheduleSettlement(key)
+        sender().scheduleSettlement(key)
 
         assertThat(arrived.await(5, TimeUnit.SECONDS)).isTrue()
         assertAll(
-            { assertThat(received.first()["status"]).isEqualTo("FAILED") },
-            { assertThat(received.first()["declineReason"]).isEqualTo("승인거절") },
+            { assertThat(received.first()["status"]).isEqualTo("SUCCESS") },
+            { assertThat(received.first()["declineCode"]).isNull() },
+            { assertThat(store.find(key)?.declineReason).isNull() },
         )
     }
 

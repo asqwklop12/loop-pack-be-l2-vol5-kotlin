@@ -18,12 +18,12 @@ data class PgTransaction(
     val status: PgStatus,
     val requestedAt: Instant,
     val settledAt: Instant? = null,
-    val declineReason: String? = null,
+    val declineReason: DeclineReason? = null,
     val testCard: TestCard? = null,
 ) {
     val isFinal: Boolean
         get() = status != PgStatus.PENDING
 
-    fun settle(next: PgStatus, at: Instant, reason: String? = null): PgTransaction =
+    fun settle(next: PgStatus, at: Instant, reason: DeclineReason? = null): PgTransaction =
         if (isFinal) this else copy(status = next, settledAt = at, declineReason = reason)
 }

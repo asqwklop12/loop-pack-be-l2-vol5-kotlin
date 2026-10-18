@@ -20,6 +20,7 @@ object PgV1Dto {
         val status: PgStatus,
         val requestedAt: Instant,
         val settledAt: Instant?,
+        val declineCode: String?,
         val declineReason: String?,
     ) {
         companion object {
@@ -32,7 +33,8 @@ object PgV1Dto {
                 status = transaction.status,
                 requestedAt = transaction.requestedAt,
                 settledAt = transaction.settledAt,
-                declineReason = transaction.declineReason,
+                declineCode = transaction.declineReason?.name,
+                declineReason = transaction.declineReason?.message,
             )
         }
     }
