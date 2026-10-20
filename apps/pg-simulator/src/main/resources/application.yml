@@ -23,6 +23,7 @@ pg:
   callback-url: ${PG_CALLBACK_URL:http://localhost:8080/api/v1/payments/callback}
   callback-delay: ${PG_CALLBACK_DELAY:3s}
   slow-card-delay: ${PG_SLOW_CARD_DELAY:10s}
+  response-delay: ${PG_RESPONSE_DELAY:0s}
   decline:
     limit-exceeded: ${PG_DECLINE_LIMIT_EXCEEDED:0.005}
     insufficient-balance: ${PG_DECLINE_INSUFFICIENT_BALANCE:0.005}

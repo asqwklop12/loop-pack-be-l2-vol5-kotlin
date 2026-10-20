@@ -27,8 +27,12 @@ class PgV1Controller(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "카드번호 형식이 올바르지 않습니다.")
         }
 
-        if (TestCard.of(request.cardNo) == TestCard.SLOW) {
-            Thread.sleep(properties.slowCardDelay.toMillis())
+        val delay = maxOf(
+            properties.responseDelay.toMillis(),
+            if (TestCard.of(request.cardNo) == TestCard.SLOW) properties.slowCardDelay.toMillis() else 0,
+        )
+        if (delay > 0) {
+            Thread.sleep(delay)
         }
 
         val accepted = store.accept(
