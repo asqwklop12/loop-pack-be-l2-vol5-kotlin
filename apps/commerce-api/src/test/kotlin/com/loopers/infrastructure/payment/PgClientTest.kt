@@ -68,13 +68,12 @@ class PgClientTest {
             respond(
                 "/api/v1/payments",
                 202,
-                """{"transactionKey":"pgtx_1","orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
+                """{"orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
             )
 
             val transaction = client().request(orderId = 1L, amount = Money(50_000), card = card)
 
             assertAll(
-                { assertThat(transaction.transactionKey).isEqualTo("pgtx_1") },
                 { assertThat(transaction.orderId).isEqualTo(1L) },
                 { assertThat(transaction.amount).isEqualTo(Money(50_000)) },
                 { assertThat(transaction.status).isEqualTo(PaymentStatus.PENDING) },
@@ -89,7 +88,7 @@ class PgClientTest {
             respond(
                 "/api/v1/payments",
                 202,
-                """{"transactionKey":"pgtx_1","orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
+                """{"orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
                 delay = Duration.ofMillis(800),
             )
 
@@ -112,7 +111,7 @@ class PgClientTest {
             respond(
                 "/api/v1/payments",
                 202,
-                """{"transactionKey":"pgtx_1","orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
+                """{"orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
                 delay = Duration.ofMillis(800),
             )
 
@@ -133,7 +132,7 @@ class PgClientTest {
             respond(
                 "/api/v1/payments",
                 202,
-                """{"transactionKey":"pgtx_1","orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
+                """{"orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
                 delay = Duration.ofMillis(800),
             )
 
@@ -152,7 +151,7 @@ class PgClientTest {
             var sent = ""
             server.createContext("/api/v1/payments") { exchange ->
                 sent = exchange.requestBody.readBytes().toString(StandardCharsets.UTF_8)
-                val bytes = """{"transactionKey":"pgtx_1","orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}"""
+                val bytes = """{"orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}"""
                     .toByteArray(StandardCharsets.UTF_8)
                 exchange.responseHeaders.add("Content-Type", "application/json")
                 exchange.sendResponseHeaders(202, bytes.size.toLong())
@@ -173,7 +172,7 @@ class PgClientTest {
             respond(
                 "/api/v1/payments",
                 202,
-                """{"transactionKey":"pgtx_1","orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
+                """{"orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"PENDING"}""",
             )
 
             val transaction = client().request(1L, Money(50_000), card)
@@ -188,41 +187,16 @@ class PgClientTest {
     @DisplayName("거래를 조회할 때,")
     @Nested
     inner class Find {
-        @DisplayName("확정된 거래를 받는다.")
-        @Test
-        fun returnsSettledTransaction() {
-            respond(
-                "/api/v1/payments/pgtx_1",
-                200,
-                """{"transactionKey":"pgtx_1","orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"SUCCESS"}""",
-            )
-
-            val transaction = client().find("pgtx_1")
-
-            assertAll(
-                { assertThat(transaction?.status).isEqualTo(PaymentStatus.SUCCESS) },
-                { assertThat(transaction?.isFinal).isTrue() },
-            )
-        }
-
-        @DisplayName("PG 가 모르는 거래는 없는 것으로 본다.")
-        @Test
-        fun returnsNullForUnknownTransaction() {
-            respond("/api/v1/payments/pgtx_unknown", 404, """{"error":"not found"}""")
-
-            assertThat(client().find("pgtx_unknown")).isNull()
-        }
-
-        @DisplayName("주문으로도 조회한다.")
+        @DisplayName("주문으로 조회한다.")
         @Test
         fun findsByOrderId() {
             respond(
                 "/api/v1/payments",
                 200,
-                """{"transactionKey":"pgtx_1","orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"SUCCESS"}""",
+                """{"orderId":1,"amount":50000,"maskedCardNo":"****-****-****-1451","status":"SUCCESS"}""",
             )
 
-            assertThat(client().findByOrderId(1L)?.transactionKey).isEqualTo("pgtx_1")
+            assertThat(client().findByOrderId(1L)?.orderId).isEqualTo(1L)
         }
     }
 }

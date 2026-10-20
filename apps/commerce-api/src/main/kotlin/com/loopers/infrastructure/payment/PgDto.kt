@@ -13,7 +13,6 @@ object PgDto {
     )
 
     data class PaymentResponse(
-        val transactionKey: String,
         val orderId: Long,
         val amount: Long,
         val maskedCardNo: String,
@@ -21,7 +20,6 @@ object PgDto {
         val declineReason: String? = null,
     ) {
         fun toTransaction() = PaymentTransaction(
-            transactionKey = transactionKey,
             orderId = orderId,
             amount = Money(amount),
             maskedCardNo = maskedCardNo,

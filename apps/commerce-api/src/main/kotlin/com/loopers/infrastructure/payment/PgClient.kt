@@ -40,15 +40,6 @@ class PgClient(
             ?.toTransaction()
             ?: throw IllegalStateException("PG 응답 본문이 비어 있습니다. [orderId = $orderId]")
 
-    override fun find(transactionKey: String): PaymentTransaction? =
-        runCatching {
-            restClient.get()
-                .uri("/api/v1/payments/{transactionKey}", transactionKey)
-                .retrieve()
-                .body<PgDto.PaymentResponse>()
-                ?.toTransaction()
-        }.getOrElse { if (it is HttpClientErrorException.NotFound) null else throw it }
-
     override fun findByOrderId(orderId: Long): PaymentTransaction? =
         runCatching {
             restClient.get()

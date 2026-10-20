@@ -39,7 +39,6 @@ class PaymentProcessorTest {
     )
 
     private fun pending() = PaymentTransaction(
-        transactionKey = "pgtx_1",
         orderId = 100L,
         amount = amount,
         maskedCardNo = "****-****-****-1451",
@@ -72,7 +71,6 @@ class PaymentProcessorTest {
                 { verify(exactly = 1) { paymentGateway.request(100L, amount, card) } },
                 { verify(exactly = 0) { pointService.pay(any(), any()) } },
                 { assertThat(result.method).isEqualTo(PaymentMethod.CARD) },
-                { assertThat(result.transactionKey).isEqualTo("pgtx_1") },
             )
         }
 
@@ -99,7 +97,6 @@ class PaymentProcessorTest {
             assertAll(
                 { assertThat(result.status).isEqualTo(PaymentStatus.SUCCESS) },
                 { assertThat(result.isFinal).isTrue() },
-                { assertThat(result.transactionKey).isNull() },
             )
         }
 

@@ -5,6 +5,7 @@ import com.loopers.domain.order.OrderCommand
 import com.loopers.domain.payment.CardInfo
 import com.loopers.domain.payment.PaymentGateway
 import com.loopers.domain.payment.PaymentMethod
+import com.loopers.domain.payment.PaymentRepository
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.payment.PaymentTransaction
 import com.loopers.domain.point.PointService
@@ -30,6 +31,7 @@ import org.springframework.boot.test.context.SpringBootTest
 class OrderPaymentIntegrationTest @Autowired constructor(
     private val orderFacade: OrderFacade,
     private val pointService: PointService,
+    private val paymentRepository: PaymentRepository,
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
@@ -65,8 +67,7 @@ class OrderPaymentIntegrationTest @Autowired constructor(
         val amount = slot<Money>()
         every { paymentGateway.request(any(), capture(amount), any()) } answers {
             PaymentTransaction(
-                transactionKey = "pgtx_1",
-                orderId = firstArg(),
+                        orderId = firstArg(),
                 amount = amount.captured,
                 maskedCardNo = "****-****-****-1451",
                 status = PaymentStatus.PENDING,
@@ -96,6 +97,40 @@ class OrderPaymentIntegrationTest @Autowired constructor(
         )
     }
 
+    @DisplayName("카드 결제는 PG 가 미확정을 주므로 결제 기록도 PENDING 으로 남는다.")
+    @Test
+    fun leavesPendingPayment() {
+        pointService.charge(userId, Money(10_000))
+        val orderId = draftOrder(price = 1_000)
+        every { paymentGateway.request(any(), any(), any()) } returns PaymentTransaction(
+                orderId = orderId,
+            amount = Money(1_000),
+            maskedCardNo = "****-****-****-1451",
+            status = PaymentStatus.PENDING,
+        )
+
+        orderFacade.confirm(userId, orderId, PaymentMethod.CARD, card)
+
+        val payments = paymentRepository.findAllByOrderId(orderId)
+        assertAll(
+            { assertThat(payments).hasSize(1) },
+            { assertThat(payments.first().amount).isEqualTo(Money(1_000)) },
+            { assertThat(payments.first().status).isEqualTo(PaymentStatus.PENDING) },
+        )
+    }
+
+    @DisplayName("포인트 결제는 그 자리에서 확정되므로 결제 기록도 SUCCESS 다.")
+    @Test
+    fun leavesSucceededPayment() {
+        pointService.charge(userId, Money(10_000))
+        val orderId = draftOrder(price = 1_000)
+
+        orderFacade.confirm(userId, orderId)
+
+        assertThat(paymentRepository.findAllByOrderId(orderId).first().status)
+            .isEqualTo(PaymentStatus.SUCCESS)
+    }
+
     @DisplayName("PG 호출이 실패하면 재고와 주문이 되돌아간다.")
     @Test
     fun rollsBackWhenGatewayFails() {
@@ -108,6 +143,7 @@ class OrderPaymentIntegrationTest @Autowired constructor(
         assertAll(
             { assertThat(productJpaRepository.findById(product.id).get().stock.quantity).isEqualTo(5) },
             { assertThat(orderFacade.get(userId, orderId).status).isEqualTo("DRAFT") },
+            { assertThat(paymentRepository.findAllByOrderId(orderId)).isEmpty() },
         )
     }
 }

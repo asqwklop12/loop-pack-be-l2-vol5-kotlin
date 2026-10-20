@@ -4,9 +4,12 @@ import com.loopers.domain.order.OrderCommand
 import com.loopers.domain.order.OrderLine
 import com.loopers.domain.order.OrderService
 import com.loopers.application.payment.PaymentProcessor
+import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentCommand
 import com.loopers.domain.payment.CardInfo
 import com.loopers.domain.payment.PaymentMethod
+import com.loopers.domain.payment.PaymentRepository
+import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.point.PointService
 import com.loopers.domain.product.ProductService
 import org.springframework.stereotype.Component
@@ -24,6 +27,7 @@ class OrderFacade(
     private val productService: ProductService,
     private val pointService: PointService,
     private val paymentProcessor: PaymentProcessor,
+    private val paymentRepository: PaymentRepository,
 ) {
     /**
      * 주문서만 만든다. 단가는 이 시점의 상품 가격으로 고정한다. 나중에는 알아낼 수 없는 값이다.
@@ -60,7 +64,9 @@ class OrderFacade(
             productService.decreaseStock(product, line.quantity)
         }
 
-        paymentProcessor.pay(
+        val payment = paymentRepository.save(Payment(orderId = order.id, amount = order.totalAmount))
+
+        val result = paymentProcessor.pay(
             PaymentCommand(
                 userId = userId,
                 orderId = order.id,
@@ -69,6 +75,12 @@ class OrderFacade(
                 card = card,
             ),
         )
+
+        when (result.status) {
+            PaymentStatus.SUCCESS -> payment.markSuccess()
+            PaymentStatus.FAILED -> payment.markFailed()
+            PaymentStatus.PENDING -> Unit
+        }
 
         return OrderInfo.from(orderService.confirm(order))
     }
