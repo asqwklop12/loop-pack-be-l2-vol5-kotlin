@@ -3,13 +3,16 @@ package com.loopers.interfaces.api
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.like.Like
 import com.loopers.domain.product.Product
+import com.loopers.domain.product.ProductStats
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandJpaRepository
 import com.loopers.infrastructure.like.LikeJpaRepository
 import com.loopers.infrastructure.product.ProductJpaRepository
+import com.loopers.infrastructure.product.ProductStatsJpaRepository
 import com.loopers.interfaces.api.product.ProductV1Dto
 import com.loopers.utils.DatabaseCleanUp
+import com.loopers.utils.RedisCleanUp
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.DisplayName
@@ -29,11 +32,18 @@ class ProductListV1ApiE2ETest @Autowired constructor(
     private val testRestTemplate: TestRestTemplate,
     private val likeJpaRepository: LikeJpaRepository,
     private val productJpaRepository: ProductJpaRepository,
+    private val productStatsJpaRepository: ProductStatsJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
+    private val redisCleanUp: RedisCleanUp,
 ) {
+    // 인기순 상위 구간은 캐시를 타므로, DB 만 비우면 앞 테스트가 담은 id 가 남는다.
+    // truncate 로 id 가 1 부터 다시 시작하는 탓에 그 id 가 다음 테스트의 상품과 맞아버린다.
     @AfterEach
-    fun tearDown() = databaseCleanUp.truncateAllTables()
+    fun tearDown() {
+        databaseCleanUp.truncateAllTables()
+        redisCleanUp.truncateAll()
+    }
 
     private val pageType = object : ParameterizedTypeReference<ApiResponse<ProductV1Dto.ProductPageResponse>>() {}
 
@@ -43,6 +53,9 @@ class ProductListV1ApiE2ETest @Autowired constructor(
         productJpaRepository.save(
             Product(brandId = brandId, name = name, price = Money(price), stock = Stock(stock)),
         )
+
+    private fun savedStats(productId: Long, likeCount: Long) =
+        productStatsJpaRepository.save(ProductStats(productId = productId, likeCount = likeCount))
 
     private fun get(query: String = "") =
         testRestTemplate.exchange("/api/v1/products$query", HttpMethod.GET, HttpEntity<Any>(Unit), pageType)
@@ -170,15 +183,31 @@ class ProductListV1ApiE2ETest @Autowired constructor(
         @Test
         fun sortsByLikesDesc() {
             val brand = savedBrand("나이키코리아")
-            val few = savedProduct(brand.id, "적은상품", 1_000)
+            // 좋아요가 많은 쪽을 먼저 저장해, id 동점 처리로는 이 순서가 나오지 않게 한다.
             val many = savedProduct(brand.id, "많은상품", 1_000)
+            val few = savedProduct(brand.id, "적은상품", 1_000)
             likeJpaRepository.save(Like(userId = 1L, productId = few.id))
             likeJpaRepository.save(Like(userId = 1L, productId = many.id))
             likeJpaRepository.save(Like(userId = 2L, productId = many.id))
+            savedStats(many.id, 2)
+            savedStats(few.id, 1)
 
             val response = get("?sort=likes_desc")
 
             assertThat(response.body?.data?.items?.map { it.name }).containsExactly("많은상품", "적은상품")
+        }
+
+        @DisplayName("likes_desc 는 집계에 행이 없는 상품을 빼고 반환한다.")
+        @Test
+        fun skipsProductsWithoutStats() {
+            val brand = savedBrand("나이키코리아")
+            val counted = savedProduct(brand.id, "집계된상품", 1_000)
+            savedProduct(brand.id, "집계안된상품", 1_000)
+            savedStats(counted.id, 3)
+
+            val response = get("?sort=likes_desc")
+
+            assertThat(response.body?.data?.items?.map { it.name }).containsExactly("집계된상품")
         }
 
         @DisplayName("latest 는 최근에 등록한 순으로 반환한다.")

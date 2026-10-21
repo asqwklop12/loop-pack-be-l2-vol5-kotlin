@@ -49,21 +49,31 @@ class ProductQueryDslRepository(
     }
 
     /**
-     * 좋아요 수는 하루 한 번 집계한 `product_stats` 에서 읽는다. 관계를 세지 않는다.
+     * `product` 에서 조인해 내려가면 정렬 키가 `product_stats` 에 있어 정렬을 인덱스로 건너뛸 수 없다.
+     * 그래서 `product_stats` 에서 먼저 id 만 뽑는다 — `idx_product_stats_like_count` 가
+     * `(like_count desc, product_id desc)` 라 이 구간은 인덱스만 읽고 끝난다.
      *
-     * 좋아요가 한 번도 없는 상품은 집계에 행이 없으므로 left join 이고, 정렬에서는
-     * 0 으로 본다. 집계를 쓴다고 이 쿼리가 빨라지지는 않는다 — 느린 이유는 세는 것이
-     * 아니라 판매중 상품 전체를 정렬하는 것이라, 상위 구간은 캐시가 계속 맡는다.
+     * 2단계에서 판매·삭제·브랜드 조건을 걸기 때문에 **한 페이지가 size 보다 적게 올 수 있다.**
+     * 좋아요 집계에 행이 없는 상품은 1단계에서 아예 안 뽑힌다.
      */
     private fun searchByLikes(search: ProductSearch): List<Product> {
-        return queryFactory
-            .selectFrom(product)
-            .leftJoin(productStats).on(productStats.productId.eq(product.id))
-            .where(notDeleted(), selling(), brandEq(search.brandId))
-            .orderBy(productStats.likeCount.coalesce(0L).desc(), product.id.desc())
+        val ids = queryFactory
+            .select(productStats.productId)
+            .from(productStats)
+            .orderBy(productStats.likeCount.desc(), productStats.productId.desc())
             .offset(search.offset)
             .limit(search.size.toLong())
             .fetch()
+
+        if (ids.isEmpty()) return emptyList()
+
+        val found = queryFactory
+            .selectFrom(product)
+            .where(product.id.`in`(ids), notDeleted(), selling(), brandEq(search.brandId))
+            .fetch()
+            .associateBy { it.id }
+
+        return ids.mapNotNull { found[it] }
     }
 
     private fun notDeleted(): BooleanExpression = product.deletedAt.isNull

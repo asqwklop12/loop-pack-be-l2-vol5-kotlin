@@ -3,12 +3,15 @@ package com.loopers.interfaces.api
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.like.Like
 import com.loopers.domain.product.Product
+import com.loopers.domain.product.ProductStats
 import com.loopers.domain.product.Stock
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandJpaRepository
 import com.loopers.infrastructure.like.LikeJpaRepository
 import com.loopers.infrastructure.product.ProductJpaRepository
+import com.loopers.infrastructure.product.ProductStatsJpaRepository
 import com.loopers.utils.DatabaseCleanUp
+import com.loopers.utils.RedisCleanUp
 import jakarta.persistence.EntityManagerFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.hibernate.SessionFactory
@@ -37,11 +40,17 @@ class ProductListQueryCountTest @Autowired constructor(
     private val entityManagerFactory: EntityManagerFactory,
     private val likeJpaRepository: LikeJpaRepository,
     private val productJpaRepository: ProductJpaRepository,
+    private val productStatsJpaRepository: ProductStatsJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
+    private val redisCleanUp: RedisCleanUp,
 ) {
+    // 인기순 상위 구간은 캐시를 타므로 Redis 도 비워야 앞 테스트의 id 가 넘어오지 않는다.
     @AfterEach
-    fun tearDown() = databaseCleanUp.truncateAllTables()
+    fun tearDown() {
+        databaseCleanUp.truncateAllTables()
+        redisCleanUp.truncateAll()
+    }
 
     private val statistics: Statistics
         get() = entityManagerFactory.unwrap(SessionFactory::class.java).statistics
@@ -77,6 +86,10 @@ class ProductListQueryCountTest @Autowired constructor(
 
         likeJpaRepository.save(Like(userId = 1, productId = airmax.id))
         likeJpaRepository.save(Like(userId = 2, productId = ultraboost.id))
+
+        // 인기순은 좋아요를 세지 않고 집계 테이블을 읽는다. 행이 없으면 목록이 비어 쿼리 수도 달라진다.
+        productStatsJpaRepository.save(ProductStats(productId = airmax.id, likeCount = 1))
+        productStatsJpaRepository.save(ProductStats(productId = ultraboost.id, likeCount = 1))
     }
 
     @DisplayName("브랜드 필터 + 가격순 목록 조회는 요청당 SQL 4개를 실행한다.")
@@ -91,7 +104,7 @@ class ProductListQueryCountTest @Autowired constructor(
         assertThat(count).isEqualTo(4L)
     }
 
-    @DisplayName("좋아요순 목록 조회도 요청당 SQL 4개를 실행한다. 좋아요를 조인으로 세도 수는 줄지 않는다.")
+    @DisplayName("좋아요순 목록 조회는 요청당 SQL 5개를 실행한다. 집계에서 id 를 먼저 뽑는 한 개가 더 나간다.")
     @Test
     fun countsQueriesOfLikesDescList() {
         seed()
@@ -99,6 +112,6 @@ class ProductListQueryCountTest @Autowired constructor(
         val count = queryCountOf("?sort=likes_desc&page=0&size=20")
 
         println(">>>> likes_desc 요청당 SQL = $count")
-        assertThat(count).isEqualTo(4L)
+        assertThat(count).isEqualTo(5L)
     }
 }
