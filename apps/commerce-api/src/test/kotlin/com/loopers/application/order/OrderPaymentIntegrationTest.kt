@@ -131,9 +131,25 @@ class OrderPaymentIntegrationTest @Autowired constructor(
             .isEqualTo(PaymentStatus.SUCCESS)
     }
 
-    @DisplayName("PG 호출이 실패하면 재고와 주문이 되돌아간다.")
+    @DisplayName("PG 호출이 실패해도 결제 기록이 미확정으로 남는다.")
     @Test
-    fun rollsBackWhenGatewayFails() {
+    fun keepsPendingPaymentWhenGatewayFails() {
+        val orderId = draftOrder(price = 1_000)
+        every { paymentGateway.request(any(), any(), any()) } throws IllegalStateException("PG 응답 없음")
+
+        runCatching { orderFacade.confirm(userId, orderId, PaymentMethod.CARD, card) }
+
+        val payments = paymentRepository.findAllByOrderId(orderId)
+        assertAll(
+            { assertThat(payments).hasSize(1) },
+            { assertThat(payments.first().status).isEqualTo(PaymentStatus.PENDING) },
+            { assertThat(payments.first().amount).isEqualTo(Money(1_000)) },
+        )
+    }
+
+    @DisplayName("PG 호출이 실패하면 재고는 줄지 않고 주문은 확정으로 남는다.")
+    @Test
+    fun keepsStockAndOrderWhenGatewayFails() {
         val product = savedProduct(price = 1_000, stock = 5)
         val orderId = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, 2))).id
         every { paymentGateway.request(any(), any(), any()) } throws IllegalStateException("PG 응답 없음")
@@ -142,8 +158,39 @@ class OrderPaymentIntegrationTest @Autowired constructor(
 
         assertAll(
             { assertThat(productJpaRepository.findById(product.id).get().stock.quantity).isEqualTo(5) },
+            { assertThat(orderFacade.get(userId, orderId).status).isEqualTo("CONFIRMED") },
+        )
+    }
+
+    @DisplayName("포인트 결제는 외부를 부르지 않으므로 잔액이 부족하면 전부 되돌아간다.")
+    @Test
+    fun rollsBackWhenPointIsNotEnough() {
+        val product = savedProduct(price = 10_000, stock = 5)
+        val orderId = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, 1))).id
+        pointService.charge(userId, Money(1_000))
+
+        runCatching { orderFacade.confirm(userId, orderId) }
+
+        assertAll(
+            { assertThat(productJpaRepository.findById(product.id).get().stock.quantity).isEqualTo(5) },
             { assertThat(orderFacade.get(userId, orderId).status).isEqualTo("DRAFT") },
             { assertThat(paymentRepository.findAllByOrderId(orderId)).isEmpty() },
+        )
+    }
+
+    @DisplayName("카드 정보가 없으면 커밋 전에 거절되므로 재고와 주문이 그대로다.")
+    @Test
+    fun rejectsBeforeCommitWhenCardIsMissing() {
+        val product = savedProduct(price = 1_000, stock = 5)
+        val orderId = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, 2))).id
+
+        runCatching { orderFacade.confirm(userId, orderId, PaymentMethod.CARD, card = null) }
+
+        assertAll(
+            { assertThat(productJpaRepository.findById(product.id).get().stock.quantity).isEqualTo(5) },
+            { assertThat(orderFacade.get(userId, orderId).status).isEqualTo("DRAFT") },
+            { assertThat(paymentRepository.findAllByOrderId(orderId)).isEmpty() },
+            { verify(exactly = 0) { paymentGateway.request(any(), any(), any()) } },
         )
     }
 }

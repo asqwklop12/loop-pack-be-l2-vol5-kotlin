@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component
 class PointPaymentStrategy(
     private val pointService: PointService,
 ) : PaymentStrategy {
+    override val external: Boolean = false
+
     override fun supports(method: PaymentMethod): Boolean = method == PaymentMethod.POINT
 
     override fun pay(command: PaymentCommand): PaymentResult {

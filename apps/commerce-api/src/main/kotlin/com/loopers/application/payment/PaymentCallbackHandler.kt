@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional
 @Component
 class PaymentCallbackHandler(
     private val paymentRepository: PaymentRepository,
+    private val paymentSettlement: PaymentSettlement,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -40,7 +41,7 @@ class PaymentCallbackHandler(
             return
         }
 
-        pending.forEach { it.markFailed() }
+        pending.forEach { paymentSettlement.reflect(it, PaymentStatus.FAILED) }
 
         log.warn(
             "결제 거절 반영. orderId={} transactionKey={} code={} reason={} count={}",
@@ -65,7 +66,7 @@ class PaymentCallbackHandler(
             return
         }
 
-        pending.forEach { it.markSuccess() }
+        pending.forEach { paymentSettlement.reflect(it, PaymentStatus.SUCCESS) }
 
         log.info(
             "결제 승인 반영. orderId={} transactionKey={} count={}",

@@ -14,6 +14,10 @@ class PaymentProcessor(
 ) {
     fun pay(command: PaymentCommand): PaymentResult = select(command.method).pay(command)
 
+    fun require(command: PaymentCommand) = select(command.method).require(command)
+
+    fun isExternal(method: PaymentMethod): Boolean = select(method).external
+
     private fun select(method: PaymentMethod): PaymentStrategy =
         strategies.firstOrNull { it.supports(method) }
             ?: throw CoreException(ErrorType.BAD_REQUEST, "지원하지 않는 결제 수단입니다. [method = $method]")
