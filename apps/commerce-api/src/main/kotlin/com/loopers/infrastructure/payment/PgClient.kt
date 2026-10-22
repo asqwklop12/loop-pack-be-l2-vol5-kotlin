@@ -4,6 +4,7 @@ import com.loopers.domain.payment.CardInfo
 import com.loopers.domain.payment.PaymentGateway
 import com.loopers.domain.payment.PaymentTransaction
 import com.loopers.domain.shared.Money
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpClientErrorException
@@ -24,6 +25,7 @@ class PgClient(
         )
         .build()
 
+    @CircuitBreaker(name = PG)
     override fun request(orderId: Long, amount: Money, card: CardInfo): PaymentTransaction =
         restClient.post()
             .uri("/api/v1/payments")
@@ -40,6 +42,7 @@ class PgClient(
             ?.toTransaction()
             ?: throw IllegalStateException("PG 응답 본문이 비어 있습니다. [orderId = $orderId]")
 
+    // 조회에는 서킷을 걸지 않는다. 접수가 막힌 동안 우리가 모르는 거래를 찾아오는 경로다.
     override fun findByOrderId(orderId: Long): PaymentTransaction? =
         runCatching {
             restClient.get()
@@ -48,4 +51,8 @@ class PgClient(
                 .body<PgDto.PaymentResponse>()
                 ?.toTransaction()
         }.getOrElse { if (it is HttpClientErrorException.NotFound) null else throw it }
+
+    companion object {
+        const val PG = "pg"
+    }
 }
