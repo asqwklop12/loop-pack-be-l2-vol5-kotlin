@@ -10,10 +10,15 @@ import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Index
 import jakarta.persistence.Table
+import jakarta.persistence.UniqueConstraint
+import java.util.UUID
 
 @Entity
 @Table(
     name = "payment",
+    uniqueConstraints = [
+        UniqueConstraint(name = "uk_payment_key", columnNames = ["payment_key"]),
+    ],
     indexes = [
         Index(name = "idx_payment_order", columnList = "order_id"),
     ],
@@ -22,7 +27,12 @@ class Payment(
     orderId: Long,
     amount: Money,
     status: PaymentStatus = PaymentStatus.PENDING,
+    paymentKey: String = UUID.randomUUID().toString(),
 ) : BaseEntity() {
+    @Column(name = "payment_key", nullable = false, updatable = false, length = 36)
+    var paymentKey: String = paymentKey
+        protected set
+
     @Column(name = "order_id", nullable = false, updatable = false)
     var orderId: Long = orderId
         protected set

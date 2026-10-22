@@ -2,19 +2,26 @@ package com.loopers.domain.payment
 
 import com.loopers.domain.shared.Money
 import com.loopers.utils.DatabaseCleanUp
+import jakarta.persistence.EntityManager
+import jakarta.persistence.PersistenceContext
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.dao.DataIntegrityViolationException
 
 @SpringBootTest
 class PaymentRepositoryIntegrationTest @Autowired constructor(
     private val paymentRepository: PaymentRepository,
     private val databaseCleanUp: DatabaseCleanUp,
 ) {
+    @PersistenceContext
+    private lateinit var entityManager: EntityManager
+
     @AfterEach
     fun tearDown() = databaseCleanUp.truncateAllTables()
 
@@ -63,5 +70,48 @@ class PaymentRepositoryIntegrationTest @Autowired constructor(
         paymentRepository.save(Payment(orderId = 1L, amount = Money(50_000)))
 
         assertThat(paymentRepository.findAllByOrderId(1L)).hasSize(2)
+    }
+
+    @DisplayName("저장하면 멱등키가 함께 남는다.")
+    @Test
+    fun issuesPaymentKey() {
+        val saved = paymentRepository.save(Payment(orderId = 1L, amount = Money(50_000)))
+
+        assertAll(
+            { assertThat(saved.paymentKey).isNotBlank() },
+            { assertThat(saved.paymentKey).hasSize(36) },
+        )
+    }
+
+    @DisplayName("한 주문의 두 시도는 서로 다른 멱등키를 받는다.")
+    @Test
+    fun issuesDistinctKeysPerAttempt() {
+        val first = paymentRepository.save(Payment(orderId = 1L, amount = Money(50_000)))
+        val second = paymentRepository.save(Payment(orderId = 1L, amount = Money(50_000)))
+
+        assertThat(first.paymentKey).isNotEqualTo(second.paymentKey)
+    }
+
+    @DisplayName("멱등키로 찾는다.")
+    @Test
+    fun findsByPaymentKey() {
+        val saved = paymentRepository.save(Payment(orderId = 1L, amount = Money(50_000)))
+
+        assertAll(
+            { assertThat(paymentRepository.findByPaymentKey(saved.paymentKey)?.id).isEqualTo(saved.id) },
+            { assertThat(paymentRepository.findByPaymentKey("없는-키")).isNull() },
+        )
+    }
+
+    @DisplayName("같은 멱등키로는 두 번 남길 수 없다.")
+    @Test
+    fun rejectsDuplicateKey() {
+        val key = "11111111-2222-3333-4444-555555555555"
+        paymentRepository.save(Payment(orderId = 1L, amount = Money(50_000), paymentKey = key))
+
+        assertThatThrownBy {
+            paymentRepository.save(Payment(orderId = 2L, amount = Money(30_000), paymentKey = key))
+            entityManager.flush()
+        }.isInstanceOf(DataIntegrityViolationException::class.java)
     }
 }
