@@ -5,5 +5,7 @@ interface PaymentRepository {
 
     fun find(id: Long): Payment?
 
+    fun findByPaymentKey(paymentKey: String): Payment?
+
     fun findAllByOrderId(orderId: Long): List<Payment>
 }
