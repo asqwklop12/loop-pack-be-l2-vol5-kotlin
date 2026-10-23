@@ -3,6 +3,10 @@ package com.loopers.interfaces.api.order
 import com.loopers.application.order.OrderFacade
 import com.loopers.application.order.OrderInfo
 import com.loopers.domain.order.OrderCommand
+import com.loopers.domain.payment.CardInfo
+import com.loopers.domain.payment.PaymentMethod
+import com.loopers.support.error.CoreException
+import com.loopers.support.error.ErrorType
 import com.loopers.interfaces.api.ApiResponse
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
@@ -34,8 +38,14 @@ class OrderV1Controller(
     fun confirm(
         @RequestHeader(value = "X-USER-ID") userId: Long,
         @PathVariable(value = "orderId") orderId: Long,
+        @RequestBody(required = false) request: OrderV1Dto.ConfirmRequest? = null,
     ): ApiResponse<OrderV1Dto.OrderResponse> {
-        return orderFacade.confirm(userId, orderId)
+        val method = toMethod(request?.method)
+        val card = request?.cardType?.let { type ->
+            request.cardNo?.let { number -> CardInfo(type = type, number = number) }
+        }
+
+        return orderFacade.confirm(userId, orderId, method, card)
             .let { toResponse(it) }
             .let { ApiResponse.success(it) }
     }
@@ -67,6 +77,13 @@ class OrderV1Controller(
         return orderFacade.getAll(userId)
             .map { toResponse(it) }
             .let { ApiResponse.success(it) }
+    }
+
+    private fun toMethod(raw: String?): PaymentMethod {
+        if (raw == null) return PaymentMethod.POINT
+
+        return runCatching { PaymentMethod.valueOf(raw.uppercase()) }
+            .getOrElse { throw CoreException(ErrorType.BAD_REQUEST, "지원하지 않는 결제 수단입니다. [method = $raw]") }
     }
 
     private fun toResponse(info: OrderInfo) = OrderV1Dto.OrderResponse(

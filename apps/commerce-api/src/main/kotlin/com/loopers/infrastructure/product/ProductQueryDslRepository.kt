@@ -1,11 +1,11 @@
 package com.loopers.infrastructure.product
 
-import com.loopers.domain.like.QLike
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.ProductSearch
 import com.loopers.domain.product.ProductSort
 import com.loopers.domain.product.ProductStatus
 import com.loopers.domain.product.QProduct
+import com.loopers.domain.product.QProductStats
 import com.querydsl.core.types.dsl.BooleanExpression
 import com.querydsl.jpa.impl.JPAQueryFactory
 import org.springframework.stereotype.Component
@@ -15,7 +15,7 @@ class ProductQueryDslRepository(
     private val queryFactory: JPAQueryFactory,
 ) {
     private val product = QProduct.product
-    private val like = QLike.like
+    private val productStats = QProductStats.productStats
 
     fun search(search: ProductSearch): List<Product> {
         return when (search.sort) {
@@ -49,18 +49,31 @@ class ProductQueryDslRepository(
     }
 
     /**
-     * 좋아요 수는 관계에서 센다. 관계가 없는 상품도 나와야 하므로 left join 이다.
+     * `product` 에서 조인해 내려가면 정렬 키가 `product_stats` 에 있어 정렬을 인덱스로 건너뛸 수 없다.
+     * 그래서 `product_stats` 에서 먼저 id 만 뽑는다 — `idx_product_stats_like_count` 가
+     * `(like_count desc, product_id desc)` 라 이 구간은 인덱스만 읽고 끝난다.
+     *
+     * 2단계에서 판매·삭제·브랜드 조건을 걸기 때문에 **한 페이지가 size 보다 적게 올 수 있다.**
+     * 좋아요 집계에 행이 없는 상품은 1단계에서 아예 안 뽑힌다.
      */
     private fun searchByLikes(search: ProductSearch): List<Product> {
-        return queryFactory
-            .selectFrom(product)
-            .leftJoin(like).on(like.productId.eq(product.id))
-            .where(notDeleted(), selling(), brandEq(search.brandId))
-            .groupBy(product.id)
-            .orderBy(like.count().desc(), product.id.desc())
+        val ids = queryFactory
+            .select(productStats.productId)
+            .from(productStats)
+            .orderBy(productStats.likeCount.desc(), productStats.productId.desc())
             .offset(search.offset)
             .limit(search.size.toLong())
             .fetch()
+
+        if (ids.isEmpty()) return emptyList()
+
+        val found = queryFactory
+            .selectFrom(product)
+            .where(product.id.`in`(ids), notDeleted(), selling(), brandEq(search.brandId))
+            .fetch()
+            .associateBy { it.id }
+
+        return ids.mapNotNull { found[it] }
     }
 
     private fun notDeleted(): BooleanExpression = product.deletedAt.isNull

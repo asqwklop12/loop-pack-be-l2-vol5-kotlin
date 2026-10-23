@@ -1,8 +1,13 @@
 package com.loopers.application.order
 
+import com.loopers.application.payment.PaymentProcessor
 import com.loopers.domain.order.OrderCommand
 import com.loopers.domain.order.OrderLine
 import com.loopers.domain.order.OrderService
+import com.loopers.domain.payment.CardInfo
+import com.loopers.domain.payment.PaymentMethod
+import com.loopers.domain.payment.PaymentRepository
+import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.point.PointService
 import com.loopers.domain.product.ProductService
 import org.springframework.stereotype.Component
@@ -19,6 +24,9 @@ class OrderFacade(
     private val orderService: OrderService,
     private val productService: ProductService,
     private val pointService: PointService,
+    private val paymentProcessor: PaymentProcessor,
+    private val orderConfirmation: OrderConfirmation,
+    private val paymentRepository: PaymentRepository,
 ) {
     /**
      * 주문서만 만든다. 단가는 이 시점의 상품 가격으로 고정한다. 나중에는 알아낼 수 없는 값이다.
@@ -34,24 +42,22 @@ class OrderFacade(
         return OrderInfo.from(orderService.create(userId, orderLines))
     }
 
-    /**
-     * 되돌리기 싼 것부터 차감한다. 재고가 먼저고 결제가 마지막이다.
-     * 어느 단계에서 실패해도 같은 트랜잭션 안이라 앞 단계가 되돌아간다.
-     *
-     * 상품은 **여기서 다시 확인한다.** 주문서를 만든 뒤 상품이 내려갈 수 있다.
-     */
-    @Transactional
-    fun confirm(userId: Long, orderId: Long): OrderInfo {
-        val order = orderService.get(userId, orderId)
-        order.requireDraft()
+    fun confirm(
+        userId: Long,
+        orderId: Long,
+        method: PaymentMethod = PaymentMethod.POINT,
+        card: CardInfo? = null,
+    ): OrderInfo {
+        val started = orderConfirmation.start(userId, orderId, method, card)
 
-        order.lines.forEach { line ->
-            val product = productService.getSellable(line.productId)
-            productService.decreaseStock(product, line.quantity)
+        if (!paymentProcessor.isExternal(method)) {
+            return started.info
         }
-        pointService.pay(userId, order.totalAmount)
 
-        return OrderInfo.from(orderService.confirm(order))
+        val result = paymentProcessor.pay(started.command)
+        orderConfirmation.settle(started.paymentId, result.status)
+
+        return started.info
     }
 
     /**
@@ -66,13 +72,19 @@ class OrderFacade(
 
         if (confirmed) {
             canceled.paidAmount?.let { pointService.refund(userId, it) }
-            canceled.lines.forEach { line ->
-                productService.restoreStock(line.productId, line.quantity)
+
+            if (paid(orderId)) {
+                canceled.lines.forEach { line ->
+                    productService.restoreStock(line.productId, line.quantity)
+                }
             }
         }
 
         return OrderInfo.from(canceled)
     }
+
+    private fun paid(orderId: Long): Boolean =
+        paymentRepository.findAllByOrderId(orderId).any { it.status == PaymentStatus.SUCCESS }
 
     fun get(userId: Long, orderId: Long): OrderInfo =
         OrderInfo.from(orderService.get(userId, orderId))

@@ -1,6 +1,7 @@
 ### 환경
 # 기본 포트는 8080 이지만, 8080 이 점유돼 있으면 아래 port 를 바꾼다.
 @host = http://localhost:8081
+@pg = http://localhost:8082
 @userId = 1
 @adminRole = ADMIN
 
@@ -185,9 +186,38 @@ X-USER-ID: {{userId}}
   ]
 }
 
-### 주문 확정 — 포인트 차감 + 금액 고정. 잔액 부족이면 400
+### 주문 확정 (포인트) — 본문이 없으면 POINT 다. 잔액 부족이면 400
 POST {{host}}/api/v1/orders/1/confirm
 X-USER-ID: {{userId}}
+
+### 주문 확정 (카드) — PG 로 간다. 접수만 하고 결과는 콜백으로 온다
+POST {{host}}/api/v1/orders/1/confirm
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "method": "CARD",
+  "cardType": "SAMSUNG",
+  "cardNo": "1234-5678-9814-1451"
+}
+
+### 주문 확정 (카드) — 카드 정보 없이 CARD 를 고르면 400
+POST {{host}}/api/v1/orders/1/confirm
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "method": "CARD"
+}
+
+### 주문 확정 — 모르는 수단이면 400
+POST {{host}}/api/v1/orders/1/confirm
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "method": "BITCOIN"
+}
 
 ### 주문 취소 — 재고 복원, 확정분은 포인트도 복원
 DELETE {{host}}/api/v1/orders/1
@@ -200,3 +230,134 @@ X-USER-ID: {{userId}}
 ### 내 주문 상세 — 남의 주문은 없는 주문과 같은 404
 GET {{host}}/api/v1/orders/1
 X-USER-ID: {{userId}}
+
+### ───────────────────────── 결제 · PG ─────────────────────────
+
+# PG 시뮬레이터를 먼저 띄운다
+#   ./gradlew :apps:pg-simulator:bootJar
+#   docker compose -f docker/pg-compose.yml up -d --build
+#
+# 결과는 접수 응답이 아니라 **콜백**으로 온다. commerce-api 로그를 같이 본다.
+# 시나리오는 카드번호 뒤 4자리에 박혀 있다.
+
+### PG 가 떠 있는지
+GET {{pg}}/actuator/health
+
+### PG 버전 — 지금 도는 시뮬레이터가 몇 번인지
+GET {{pg}}/actuator/info
+
+### 테스트 카드 — 정상 승인 (뒤 4자리가 규칙에 없으면 정상)
+POST {{host}}/api/v1/orders/1/confirm
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "method": "CARD",
+  "cardType": "SAMSUNG",
+  "cardNo": "1234-5678-9814-1451"
+}
+
+### 테스트 카드 — 한도초과 거절. 3초 뒤 FAILED 콜백이 온다
+# 주의: 주문은 CONFIRMED 인데 PG 는 FAILED 다. 아직 반영하지 않는다
+POST {{host}}/api/v1/orders/2/confirm
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "method": "CARD",
+  "cardType": "SAMSUNG",
+  "cardNo": "1234-5678-9814-0000"
+}
+
+### 테스트 카드 — 느린 PG. 접수 응답이 10초 지연돼 read timeout(3초)에 걸린다
+POST {{host}}/api/v1/orders/3/confirm
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "method": "CARD",
+  "cardType": "SAMSUNG",
+  "cardNo": "1234-5678-9814-1111"
+}
+
+### 테스트 카드 — 승인되지만 콜백이 오지 않는다. 조회로만 알 수 있다
+POST {{host}}/api/v1/orders/4/confirm
+Content-Type: application/json
+X-USER-ID: {{userId}}
+
+{
+  "method": "CARD",
+  "cardType": "SAMSUNG",
+  "cardNo": "1234-5678-9814-2222"
+}
+
+### ───────────────────────── PG 에 직접 묻기 ─────────────────────────
+
+### 주문으로 거래 조회 — 우리 쪽에 거래키가 없어서 이 경로로만 찾는다
+GET {{pg}}/api/v1/payments?orderId=1
+
+### 거래키로 조회
+GET {{pg}}/api/v1/payments/pgtx_여기에_거래키
+
+### PG 에 직접 접수 — commerce-api 를 거치지 않고 시뮬레이터만 볼 때
+POST {{pg}}/api/v1/payments
+Content-Type: application/json
+
+{
+  "orderId": 9001,
+  "amount": 50000,
+  "cardType": "SAMSUNG",
+  "cardNo": "1234-5678-9814-1451"
+}
+
+### 같은 주문에 다른 금액 — 409. 멱등키가 orderId 라서다
+POST {{pg}}/api/v1/payments
+Content-Type: application/json
+
+{
+  "orderId": 9001,
+  "amount": 99999,
+  "cardType": "SAMSUNG",
+  "cardNo": "1234-5678-9814-1451"
+}
+
+### ───────────────────────── 콜백 (PG → 우리) ─────────────────────────
+
+# 평소에는 PG 가 보낸다. 손으로 쏘는 것은 수신 쪽만 따로 보려는 용도다.
+# 지금은 받아서 로그만 남기고 주문 상태를 바꾸지 않는다.
+
+### 승인 콜백
+POST {{host}}/api/v1/payments/callback
+Content-Type: application/json
+
+{
+  "transactionKey": "pgtx_test_success",
+  "orderId": 1,
+  "status": "SUCCESS",
+  "amount": "50000",
+  "settledAt": "2026-10-19T03:00:00Z"
+}
+
+### 거절 콜백 — 사유가 함께 온다
+POST {{host}}/api/v1/payments/callback
+Content-Type: application/json
+
+{
+  "transactionKey": "pgtx_test_declined",
+  "orderId": 2,
+  "status": "FAILED",
+  "amount": "50000",
+  "declineCode": "LIMIT_EXCEEDED",
+  "declineReason": "한도초과"
+}
+
+### 같은 콜백 두 번 — 지금은 둘 다 200 이다. 거르는 장치가 없다
+POST {{host}}/api/v1/payments/callback
+Content-Type: application/json
+
+{
+  "transactionKey": "pgtx_test_duplicate",
+  "orderId": 3,
+  "status": "SUCCESS",
+  "amount": "50000"
+}

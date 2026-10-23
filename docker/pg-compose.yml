@@ -1,0 +1,26 @@
+name: loopers-pg
+
+services:
+  pg-simulator:
+    build:
+      context: ../apps/pg-simulator
+    container_name: pg-simulator
+    ports:
+      - "8082:8082"
+    environment:
+      - PG_CALLBACK_URL=${PG_CALLBACK_URL:-http://host.docker.internal:8080/api/v1/payments/callback}
+      - PG_CALLBACK_DELAY=${PG_CALLBACK_DELAY:-3s}
+      - PG_SLOW_CARD_DELAY=${PG_SLOW_CARD_DELAY:-10s}
+      - PG_RESPONSE_DELAY=${PG_RESPONSE_DELAY:-0s}
+      - PG_DECLINE_LIMIT_EXCEEDED=${PG_DECLINE_LIMIT_EXCEEDED:-0.005}
+      - PG_DECLINE_INSUFFICIENT_BALANCE=${PG_DECLINE_INSUFFICIENT_BALANCE:-0.005}
+      - PG_DECLINE_LOST_OR_STOLEN=${PG_DECLINE_LOST_OR_STOLEN:-0.001}
+      - PG_DECLINE_ISSUER_UNAVAILABLE=${PG_DECLINE_ISSUER_UNAVAILABLE:-0.0}
+      - PG_CALLBACK_DROP_RATE=${PG_CALLBACK_DROP_RATE:-0.0}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8082/actuator/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
