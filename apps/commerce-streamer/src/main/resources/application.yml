@@ -29,6 +29,9 @@ demo-kafka:
   test:
     topic-name: demo.internal.topic-v1
 
+order-event:
+  topic: ${ORDER_EVENTS_TOPIC:order.events.v1}
+
 ---
 spring:
   config:
