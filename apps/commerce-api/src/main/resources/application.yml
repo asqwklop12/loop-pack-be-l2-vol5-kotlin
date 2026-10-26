@@ -34,6 +34,9 @@ product:
   stats:
     cron: ${PRODUCT_STATS_CRON:0 0 4 * * *}
 
+order-event:
+  topic: ${ORDER_EVENTS_TOPIC:order.events.v1}
+
 pg:
   base-url: ${PG_BASE_URL:http://localhost:8082}
   connect-timeout: ${PG_CONNECT_TIMEOUT:1s}
