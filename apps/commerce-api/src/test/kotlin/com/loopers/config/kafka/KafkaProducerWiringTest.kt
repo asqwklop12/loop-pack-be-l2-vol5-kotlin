@@ -18,7 +18,10 @@ class KafkaProducerWiringTest @Autowired constructor(
         val config = kafkaTemplate.producerFactory.configurationProperties
 
         assertAll(
-            { assertThat(config["bootstrap.servers"]).isEqualTo(listOf("localhost:19092")) },
+            {
+                assertThat(config["bootstrap.servers"])
+                    .isEqualTo(listOf("localhost:19092", "localhost:19093", "localhost:19094"))
+            },
             { assertThat(config["key.serializer"].toString()).contains("StringSerializer") },
             { assertThat(config["value.serializer"].toString()).contains("JsonSerializer") },
         )

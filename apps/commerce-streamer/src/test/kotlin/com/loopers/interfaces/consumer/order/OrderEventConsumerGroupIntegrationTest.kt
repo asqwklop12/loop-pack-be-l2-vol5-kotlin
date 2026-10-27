@@ -4,7 +4,6 @@ import com.loopers.domain.purchase.ProductPurchaseActivity
 import com.loopers.domain.purchase.PurchaseActivityRepository
 import com.loopers.utils.DatabaseCleanUp
 import com.ninjasquad.springmockk.SpykBean
-import io.mockk.slot
 import io.mockk.verify
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.assertj.core.api.Assertions.assertThat
@@ -81,19 +80,21 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
     @Test
     fun bothGroupsReceiveSameRecord() {
         val orderId = System.currentTimeMillis()
-        val purchased = slot<List<ConsumerRecord<String, String>>>()
-        val tracked = slot<List<ConsumerRecord<String, String>>>()
+        val purchased = mutableListOf<List<ConsumerRecord<String, String>>>()
+        val tracked = mutableListOf<List<ConsumerRecord<String, String>>>()
 
         kafkaTemplate.send(topic, orderId.toString(), eventOf(orderId, 7L to 2)).get()
 
-        verify(timeout = DELIVERY_TIMEOUT_MS) {
+        verify(timeout = DELIVERY_TIMEOUT_MS, atLeast = 1) {
             purchaseActivityConsumer.consume(capture(purchased), any<Acknowledgment>())
+        }
+        verify(timeout = DELIVERY_TIMEOUT_MS, atLeast = 1) {
             stockTrackingConsumer.consume(capture(tracked), any<Acknowledgment>())
         }
         assertAll(
-            { assertThat(purchased.captured.map { it.key() }).contains(orderId.toString()) },
-            { assertThat(tracked.captured.map { it.key() }).contains(orderId.toString()) },
-            { assertThat(purchased.captured.first().topic()).isEqualTo(topic) },
+            { assertThat(purchased.flatten().map { it.key() }).contains(orderId.toString()) },
+            { assertThat(tracked.flatten().map { it.key() }).contains(orderId.toString()) },
+            { assertThat(purchased.flatten().map { it.topic() }.distinct()).containsExactly(topic) },
         )
     }
 
