@@ -25,7 +25,7 @@ class PaymentSettlement(
         payment.markSuccess()
         val reserved = stockReservationService.commit(payment.orderId)
 
-        orderEventPublisher.publish(confirmedEvent(payment.orderId, reserved))
+        orderEventPublisher.publish(confirmedEvent(payment, reserved))
     }
 
     private fun decline(payment: Payment) {
@@ -33,8 +33,9 @@ class PaymentSettlement(
         stockReservationService.release(payment.orderId)
     }
 
-    private fun confirmedEvent(orderId: Long, reserved: List<StockReservation>) = OrderConfirmedEvent(
-        orderId = orderId,
+    private fun confirmedEvent(payment: Payment, reserved: List<StockReservation>) = OrderConfirmedEvent(
+        orderId = payment.orderId,
+        userId = payment.userId,
         items = reserved.map { OrderConfirmedEvent.Item(productId = it.productId, quantity = it.quantity) },
     )
 }

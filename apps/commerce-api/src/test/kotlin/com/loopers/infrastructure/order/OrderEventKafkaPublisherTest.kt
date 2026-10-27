@@ -20,6 +20,7 @@ class OrderEventKafkaPublisherTest {
 
     private val event = OrderConfirmedEvent(
         orderId = 42L,
+        userId = 7L,
         items = listOf(OrderConfirmedEvent.Item(productId = 1L, quantity = 3)),
     )
 

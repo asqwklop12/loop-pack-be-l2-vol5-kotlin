@@ -2,6 +2,7 @@ package com.loopers.domain.order
 
 data class OrderConfirmedEvent(
     val orderId: Long,
+    val userId: Long,
     val items: List<Item>,
     val eventType: String = TYPE,
 ) {

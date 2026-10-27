@@ -94,6 +94,7 @@ class OrderEventPublishIntegrationTest @Autowired constructor(
         assertAll(
             { verify(exactly = 1) { orderEventPublisher.publish(any()) } },
             { assertThat(event.captured.orderId).isEqualTo(orderId) },
+            { assertThat(event.captured.userId).isEqualTo(userId) },
             { assertThat(event.captured.eventType).isEqualTo(OrderConfirmedEvent.TYPE) },
             { assertThat(event.captured.items).hasSize(1) },
             { assertThat(event.captured.items.first().productId).isEqualTo(product.id) },

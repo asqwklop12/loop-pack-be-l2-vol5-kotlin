@@ -21,9 +21,11 @@ import java.util.UUID
     ],
     indexes = [
         Index(name = "idx_payment_order", columnList = "order_id"),
+        Index(name = "idx_payment_user", columnList = "user_id"),
     ],
 )
 class Payment(
+    userId: Long,
     orderId: Long,
     amount: Money,
     status: PaymentStatus = PaymentStatus.PENDING,
@@ -31,6 +33,10 @@ class Payment(
 ) : BaseEntity() {
     @Column(name = "payment_key", nullable = false, updatable = false, length = 36)
     var paymentKey: String = paymentKey
+        protected set
+
+    @Column(name = "user_id", nullable = false, updatable = false)
+    var userId: Long = userId
         protected set
 
     @Column(name = "order_id", nullable = false, updatable = false)
