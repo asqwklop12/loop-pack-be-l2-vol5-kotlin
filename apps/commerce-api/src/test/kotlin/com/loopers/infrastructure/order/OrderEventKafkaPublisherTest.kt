@@ -16,13 +16,30 @@ import java.util.concurrent.CompletableFuture
 
 class OrderEventKafkaPublisherTest {
     private val kafkaTemplate = mockk<KafkaTemplate<Any, Any>>()
-    private val publisher = OrderEventKafkaPublisher(kafkaTemplate, OrderEventProperties(TOPIC))
+    private val publisher = OrderEventKafkaPublisher(kafkaTemplate, OrderEventProperties(TOPIC, SCHEMA_VERSION))
 
     private val event = OrderConfirmedEvent(
+        eventId = OrderConfirmedEvent.idOf(42L),
         orderId = 42L,
         userId = 7L,
+        confirmedAt = "2026-09-07T01:00:00Z",
         items = listOf(OrderConfirmedEvent.Item(productId = 1L, quantity = 3)),
     )
+
+    @DisplayName("보내기 직전에 설정값으로 스키마 버전을 찍는다.")
+    @Test
+    fun stampsSchemaVersion() {
+        val value = slot<Any>()
+        every { kafkaTemplate.send(any<String>(), any(), capture(value)) } returns
+            CompletableFuture.completedFuture(mockk<SendResult<Any, Any>>())
+
+        publisher.publish(event)
+
+        assertAll(
+            { assertThat(event.schemaVersion).isEqualTo(OrderConfirmedEvent.UNSTAMPED) },
+            { assertThat((value.captured as OrderConfirmedEvent).schemaVersion).isEqualTo(SCHEMA_VERSION) },
+        )
+    }
 
     @DisplayName("설정한 토픽으로 보내고 주문 id 를 키로 쓴다.")
     @Test
@@ -38,7 +55,7 @@ class OrderEventKafkaPublisherTest {
         assertAll(
             { assertThat(topic.captured).isEqualTo(TOPIC) },
             { assertThat(key.captured).isEqualTo("42") },
-            { assertThat(value.captured).isEqualTo(event) },
+            { assertThat(value.captured).isEqualTo(event.copy(schemaVersion = SCHEMA_VERSION)) },
         )
     }
 
@@ -65,5 +82,6 @@ class OrderEventKafkaPublisherTest {
 
     companion object {
         private const val TOPIC = "order.events.v1"
+        private const val SCHEMA_VERSION = 1
     }
 }

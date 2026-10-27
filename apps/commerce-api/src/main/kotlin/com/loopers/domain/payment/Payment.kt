@@ -11,6 +11,7 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.Index
 import jakarta.persistence.Table
 import jakarta.persistence.UniqueConstraint
+import java.time.ZonedDateTime
 import java.util.UUID
 
 @Entity
@@ -53,8 +54,16 @@ class Payment(
     var amount: Money = amount
         protected set
 
+    @Column(name = "succeeded_at")
+    var succeededAt: ZonedDateTime? = null
+        protected set
+
+    /**
+     * 최초 성공 시각은 한 번만 적는다. 중복 콜백이 구매 시각을 뒤로 밀면 안 된다.
+     */
     fun markSuccess() {
         status = PaymentStatus.SUCCESS
+        succeededAt = succeededAt ?: ZonedDateTime.now()
     }
 
     fun markFailed() {

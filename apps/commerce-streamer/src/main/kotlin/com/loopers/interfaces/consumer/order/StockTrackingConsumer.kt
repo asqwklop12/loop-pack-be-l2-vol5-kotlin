@@ -18,7 +18,7 @@ class StockTrackingConsumer(
         groupId = GROUP,
         containerFactory = KafkaConfig.BATCH_LISTENER,
     )
-    fun consume(records: List<ConsumerRecord<String, String>>, acknowledgment: Acknowledgment) {
+    fun consume(records: List<ConsumerRecord<String, ByteArray>>, acknowledgment: Acknowledgment) {
         orderEventRecords.confirmedOf(records)
             .forEach { log.info("[{}] orderId={} items={}", GROUP, it.orderId, it.items) }
 

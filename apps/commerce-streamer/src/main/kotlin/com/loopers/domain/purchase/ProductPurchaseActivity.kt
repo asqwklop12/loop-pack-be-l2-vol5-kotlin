@@ -5,6 +5,7 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Index
 import jakarta.persistence.Table
+import java.time.ZonedDateTime
 
 @Entity
 @Table(
@@ -20,6 +21,7 @@ class ProductPurchaseActivity(
     orderId: Long,
     productId: Long,
     quantity: Int,
+    confirmedAt: ZonedDateTime,
 ) : BaseEntity() {
     @Column(name = "user_id", nullable = false, updatable = false)
     var userId: Long = userId
@@ -35,6 +37,10 @@ class ProductPurchaseActivity(
 
     @Column(name = "quantity", nullable = false, updatable = false)
     var quantity: Int = quantity
+        protected set
+
+    @Column(name = "confirmed_at", nullable = false, updatable = false)
+    var confirmedAt: ZonedDateTime = confirmedAt
         protected set
 
     init {

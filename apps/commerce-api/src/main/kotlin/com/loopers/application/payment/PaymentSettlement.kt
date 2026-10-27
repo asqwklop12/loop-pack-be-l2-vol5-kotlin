@@ -34,8 +34,12 @@ class PaymentSettlement(
     }
 
     private fun confirmedEvent(payment: Payment, reserved: List<StockReservation>) = OrderConfirmedEvent(
+        eventId = OrderConfirmedEvent.idOf(payment.orderId),
         orderId = payment.orderId,
         userId = payment.userId,
+        confirmedAt = requireNotNull(payment.succeededAt) { "성공 시각 없이 확정 이벤트를 만들 수 없습니다." }
+            .toInstant()
+            .toString(),
         items = reserved.map { OrderConfirmedEvent.Item(productId = it.productId, quantity = it.quantity) },
     )
 }

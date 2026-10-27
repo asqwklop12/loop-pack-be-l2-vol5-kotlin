@@ -18,6 +18,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.kafka.config.KafkaListenerEndpointRegistry
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.kafka.support.Acknowledgment
+import java.time.Instant
 
 @SpringBootTest
 class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
@@ -57,8 +58,10 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
     fun tearDown() = databaseCleanUp.truncateAllTables()
 
     private fun eventOf(orderId: Long, vararg items: Pair<Long, Int>) = OrderConfirmedEvent(
+        eventId = "order-confirmed:v1:$orderId",
         orderId = orderId,
         userId = BUYER,
+        confirmedAt = CONFIRMED_AT,
         items = items.map { OrderConfirmedEvent.Item(productId = it.first, quantity = it.second) },
         eventType = "OrderConfirmed",
     )
@@ -80,8 +83,8 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
     @Test
     fun bothGroupsReceiveSameRecord() {
         val orderId = System.currentTimeMillis()
-        val purchased = mutableListOf<List<ConsumerRecord<String, String>>>()
-        val tracked = mutableListOf<List<ConsumerRecord<String, String>>>()
+        val purchased = mutableListOf<List<ConsumerRecord<String, ByteArray>>>()
+        val tracked = mutableListOf<List<ConsumerRecord<String, ByteArray>>>()
 
         kafkaTemplate.send(topic, orderId.toString(), eventOf(orderId, 7L to 2)).get()
 
@@ -112,11 +115,13 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
             { assertThat(activities.map { it.quantity }).containsExactly(2, 1) },
             { assertThat(activities).allMatch { it.orderId == orderId } },
             { assertThat(activities).allMatch { it.userId == BUYER } },
+            { assertThat(activities).allMatch { it.confirmedAt.toInstant() == Instant.parse(CONFIRMED_AT) } },
         )
     }
 
     companion object {
         private const val BUYER = 42L
+        private const val CONFIRMED_AT = "2026-09-07T01:00:00Z"
         private const val POLL_MS = 200L
         private const val ASSIGNMENT_TIMEOUT_NANOS = 60_000_000_000L
         private const val DELIVERY_TIMEOUT_NANOS = 30_000_000_000L

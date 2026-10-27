@@ -15,12 +15,14 @@ class OrderEventKafkaPublisher(
 
     override fun publish(event: OrderConfirmedEvent) {
         try {
-            kafkaTemplate.send(properties.topic, event.orderId.toString(), event)
+            kafkaTemplate.send(properties.topic, event.orderId.toString(), stamped(event))
                 .whenComplete { _, failure -> failure?.let { log(event, it) } }
         } catch (blocked: Exception) {
             log(event, blocked)
         }
     }
+
+    private fun stamped(event: OrderConfirmedEvent) = event.copy(schemaVersion = properties.schemaVersion)
 
     private fun log(event: OrderConfirmedEvent, failure: Throwable) {
         log.error(

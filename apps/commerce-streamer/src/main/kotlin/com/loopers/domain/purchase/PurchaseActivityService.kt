@@ -16,6 +16,7 @@ class PurchaseActivityService(
                     orderId = command.orderId,
                     productId = it.productId,
                     quantity = it.quantity,
+                    confirmedAt = command.confirmedAt,
                 )
             }
         }
