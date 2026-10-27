@@ -16,6 +16,9 @@ const VUS = Number(__ENV.VUS || 100);
 const DURATION = __ENV.DURATION || '30s';
 const IDS_FILE = __ENV.IDS_FILE || 'product-ids.json';
 const CHARGE = Number(__ENV.CHARGE || 100000000);
+const METHOD = __ENV.METHOD || 'POINT';
+const CARD_TYPE = __ENV.CARD_TYPE || 'SAMSUNG';
+const CARD_NO = __ENV.CARD_NO || '1234-5678-9814-1451';
 
 const productIds = new SharedArray('productIds', () => JSON.parse(open(IDS_FILE)));
 
@@ -69,7 +72,11 @@ export function order() {
   const orderId = JSON.parse(created.body).data.id;
   const confirmed = http.post(
     `${BASE}/api/v1/orders/${orderId}/confirm`,
-    JSON.stringify({ method: 'POINT' }),
+    JSON.stringify(
+      METHOD === 'CARD'
+        ? { method: 'CARD', cardType: CARD_TYPE, cardNo: CARD_NO }
+        : { method: 'POINT' },
+    ),
     { ...headers(userId), tags: { step: 'confirm' } },
   );
   confirmLatency.add(confirmed.timings.duration);
