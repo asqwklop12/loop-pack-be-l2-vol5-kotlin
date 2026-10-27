@@ -1,0 +1,43 @@
+package com.loopers.domain.purchase
+
+import com.loopers.domain.BaseEntity
+import jakarta.persistence.Column
+import jakarta.persistence.Entity
+import jakarta.persistence.Index
+import jakarta.persistence.Table
+
+@Entity
+@Table(
+    name = "product_purchase_activity",
+    indexes = [
+        Index(name = "idx_purchase_activity_order", columnList = "order_id"),
+        Index(name = "idx_purchase_activity_user", columnList = "user_id"),
+        Index(name = "idx_purchase_activity_product", columnList = "product_id"),
+    ],
+)
+class ProductPurchaseActivity(
+    userId: Long,
+    orderId: Long,
+    productId: Long,
+    quantity: Int,
+) : BaseEntity() {
+    @Column(name = "user_id", nullable = false, updatable = false)
+    var userId: Long = userId
+        protected set
+
+    @Column(name = "order_id", nullable = false, updatable = false)
+    var orderId: Long = orderId
+        protected set
+
+    @Column(name = "product_id", nullable = false, updatable = false)
+    var productId: Long = productId
+        protected set
+
+    @Column(name = "quantity", nullable = false, updatable = false)
+    var quantity: Int = quantity
+        protected set
+
+    init {
+        require(quantity > 0) { "구매 수량은 1 이상이어야 합니다. [quantity = $quantity]" }
+    }
+}
