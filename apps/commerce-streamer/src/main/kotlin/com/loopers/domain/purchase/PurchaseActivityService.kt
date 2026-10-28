@@ -5,11 +5,16 @@ import org.springframework.transaction.annotation.Transactional
 
 @Component
 class PurchaseActivityService(
+    private val processedConfirmationRepository: ProcessedConfirmationRepository,
     private val purchaseActivityRepository: PurchaseActivityRepository,
 ) {
     @Transactional
-    fun record(commands: List<PurchaseActivityCommand>): List<ProductPurchaseActivity> {
-        val activities = commands.flatMap { command ->
+    fun record(command: PurchaseActivityCommand) {
+        processedConfirmationRepository.save(
+            ProcessedOrderConfirmation(eventId = command.eventId, orderId = command.orderId),
+        )
+
+        purchaseActivityRepository.saveAll(
             command.items.map {
                 ProductPurchaseActivity(
                     userId = command.userId,
@@ -18,9 +23,7 @@ class PurchaseActivityService(
                     quantity = it.quantity,
                     confirmedAt = command.confirmedAt,
                 )
-            }
-        }
-
-        return purchaseActivityRepository.saveAll(activities)
+            },
+        )
     }
 }

@@ -9,7 +9,7 @@ class PurchaseActivityRepositoryImpl(
     private val purchaseActivityJpaRepository: PurchaseActivityJpaRepository,
 ) : PurchaseActivityRepository {
     override fun saveAll(activities: List<ProductPurchaseActivity>): List<ProductPurchaseActivity> =
-        purchaseActivityJpaRepository.saveAll(activities)
+        purchaseActivityJpaRepository.saveAllAndFlush(activities)
 
     override fun findAllByOrderId(orderId: Long): List<ProductPurchaseActivity> =
         purchaseActivityJpaRepository.findAllByOrderIdOrderByIdAsc(orderId)

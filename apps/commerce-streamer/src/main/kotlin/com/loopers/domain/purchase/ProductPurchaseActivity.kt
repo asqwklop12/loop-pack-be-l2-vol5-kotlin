@@ -5,11 +5,18 @@ import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Index
 import jakarta.persistence.Table
+import jakarta.persistence.UniqueConstraint
 import java.time.ZonedDateTime
 
 @Entity
 @Table(
     name = "product_purchase_activity",
+    uniqueConstraints = [
+        UniqueConstraint(
+            name = "uk_purchase_activity_order_product",
+            columnNames = ["order_id", "product_id"],
+        ),
+    ],
     indexes = [
         Index(name = "idx_purchase_activity_order", columnList = "order_id"),
         Index(name = "idx_purchase_activity_user", columnList = "user_id"),
