@@ -8,6 +8,9 @@ import org.springframework.stereotype.Component
 class OrderEventRecords(
     private val objectMapper: ObjectMapper,
 ) {
+    fun confirmedOf(record: ConsumerRecord<String, ByteArray>): OrderConfirmedEvent =
+        objectMapper.readValue(record.value(), OrderConfirmedEvent::class.java)
+
     fun confirmedOf(records: List<ConsumerRecord<String, ByteArray>>): List<OrderConfirmedEvent> =
-        records.map { objectMapper.readValue(it.value(), OrderConfirmedEvent::class.java) }
+        records.map { confirmedOf(it) }
 }

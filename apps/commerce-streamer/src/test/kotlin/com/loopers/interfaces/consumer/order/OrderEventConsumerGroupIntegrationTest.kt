@@ -40,18 +40,18 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
         val groups = setOf(PurchaseActivityConsumer.GROUP, StockTrackingConsumer.GROUP)
 
         while (System.nanoTime() < deadline) {
-            val assigned = registry.listenerContainers
-                .filter { !it.assignedPartitions.isNullOrEmpty() }
-                .mapNotNull { it.groupId }
-                .filter { it in groups }
-                .toSet()
+            val assigned = groups.associateWith { group ->
+                registry.listenerContainers
+                    .filter { it.groupId == group }
+                    .sumOf { it.assignedPartitions?.size ?: 0 }
+            }
 
-            if (assigned == groups) return
+            if (assigned.values.all { it >= PARTITIONS }) return
 
             Thread.sleep(POLL_MS)
         }
 
-        throw IllegalStateException("컨슈머 그룹이 파티션을 배정받지 못했다.")
+        throw IllegalStateException("컨슈머 그룹이 파티션을 모두 배정받지 못했다.")
     }
 
     @AfterEach
@@ -83,7 +83,7 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
     @Test
     fun bothGroupsReceiveSameRecord() {
         val orderId = System.currentTimeMillis()
-        val purchased = mutableListOf<List<ConsumerRecord<String, ByteArray>>>()
+        val purchased = mutableListOf<ConsumerRecord<String, ByteArray>>()
         val tracked = mutableListOf<List<ConsumerRecord<String, ByteArray>>>()
 
         kafkaTemplate.send(topic, orderId.toString(), eventOf(orderId, 7L to 2)).get()
@@ -95,10 +95,25 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
             stockTrackingConsumer.consume(capture(tracked), any<Acknowledgment>())
         }
         assertAll(
-            { assertThat(purchased.flatten().map { it.key() }).contains(orderId.toString()) },
+            { assertThat(purchased.map { it.key() }).contains(orderId.toString()) },
             { assertThat(tracked.flatten().map { it.key() }).contains(orderId.toString()) },
-            { assertThat(purchased.flatten().map { it.topic() }.distinct()).containsExactly(topic) },
+            { assertThat(purchased.map { it.topic() }.distinct()).containsExactly(topic) },
         )
+    }
+
+    @DisplayName("같은 이벤트를 두 번 받아도 구매 활동은 늘지 않는다.")
+    @Test
+    fun staysSameOnRedelivery() {
+        val orderId = System.currentTimeMillis()
+        val event = eventOf(orderId, 7L to 2, 8L to 1)
+
+        kafkaTemplate.send(topic, orderId.toString(), event).get()
+        assertThat(activitiesOf(orderId)).hasSize(2)
+
+        kafkaTemplate.send(topic, orderId.toString(), event).get()
+        Thread.sleep(REDELIVERY_SETTLE_MS)
+
+        assertThat(purchaseActivityRepository.findAllByOrderId(orderId)).hasSize(2)
     }
 
     @DisplayName("주문 확정 이벤트를 받으면 품목마다 구매 활동 한 행을 남긴다.")
@@ -121,6 +136,8 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
 
     companion object {
         private const val BUYER = 42L
+        private const val PARTITIONS = 3
+        private const val REDELIVERY_SETTLE_MS = 12_000L
         private const val CONFIRMED_AT = "2026-09-07T01:00:00Z"
         private const val POLL_MS = 200L
         private const val ASSIGNMENT_TIMEOUT_NANOS = 60_000_000_000L
