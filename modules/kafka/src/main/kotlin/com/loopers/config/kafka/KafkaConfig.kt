@@ -2,9 +2,14 @@ package com.loopers.config.kafka
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.kafka.clients.consumer.ConsumerConfig
+import org.apache.kafka.clients.producer.ProducerConfig
+import org.apache.kafka.common.serialization.ByteArraySerializer
+import org.apache.kafka.common.serialization.StringSerializer
+import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Primary
 import org.springframework.kafka.annotation.EnableKafka
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory
 import org.springframework.kafka.core.ConsumerFactory
@@ -25,6 +30,7 @@ class KafkaConfig {
     companion object {
         const val BATCH_LISTENER = "BATCH_LISTENER_DEFAULT"
         const val RECORD_LISTENER = "RECORD_LISTENER_DEFAULT"
+        const val DEAD_LETTER_TEMPLATE = "DEAD_LETTER_KAFKA_TEMPLATE"
 
         private const val CONCURRENCY = 3
         private const val MAX_POLLING_SIZE = 3000 // read 3000 msg
@@ -57,8 +63,19 @@ class KafkaConfig {
     }
 
     @Bean
+    @Primary
     fun kafkaTemplate(producerFactory: ProducerFactory<Any, Any>): KafkaTemplate<Any, Any> {
         return KafkaTemplate(producerFactory)
+    }
+
+    @Bean(DEAD_LETTER_TEMPLATE)
+    fun deadLetterKafkaTemplate(kafkaProperties: KafkaProperties): KafkaTemplate<Any, Any> {
+        val props = HashMap(kafkaProperties.buildProducerProperties()).apply {
+            put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer::class.java)
+            put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer::class.java)
+        }
+
+        return KafkaTemplate(DefaultKafkaProducerFactory(props))
     }
 
     @Bean
@@ -83,12 +100,13 @@ class KafkaConfig {
     @Bean(RECORD_LISTENER)
     fun defaultRecordListenerContainerFactory(
         kafkaProperties: KafkaProperties,
+        @Qualifier(DEAD_LETTER_TEMPLATE) deadLetterKafkaTemplate: KafkaTemplate<Any, Any>,
     ): ConcurrentKafkaListenerContainerFactory<*, *> {
         return ConcurrentKafkaListenerContainerFactory<Any, Any>().apply {
             consumerFactory = DefaultKafkaConsumerFactory(tunedConsumerConfig(kafkaProperties))
-            containerProperties.ackMode = ContainerProperties.AckMode.MANUAL
+            containerProperties.ackMode = ContainerProperties.AckMode.MANUAL_IMMEDIATE
             setConcurrency(CONCURRENCY)
-            setCommonErrorHandler(RetryThenStopErrorHandler(retryBackOff()))
+            setCommonErrorHandler(RetryThenDeadLetterErrorHandler(deadLetterKafkaTemplate, retryBackOff()))
         }
     }
 
