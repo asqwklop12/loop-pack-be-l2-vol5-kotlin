@@ -1,17 +1,17 @@
 package com.loopers.application.payment
 
 import com.loopers.domain.order.OrderConfirmedEvent
-import com.loopers.domain.order.OrderEventPublisher
 import com.loopers.domain.payment.Payment
 import com.loopers.domain.payment.PaymentStatus
 import com.loopers.domain.product.StockReservation
 import com.loopers.domain.product.StockReservationService
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 
 @Component
 class PaymentSettlement(
     private val stockReservationService: StockReservationService,
-    private val orderEventPublisher: OrderEventPublisher,
+    private val events: ApplicationEventPublisher,
 ) {
     fun reflect(payment: Payment, status: PaymentStatus) {
         when (status) {
@@ -25,7 +25,7 @@ class PaymentSettlement(
         payment.markSuccess()
         val reserved = stockReservationService.commit(payment.orderId)
 
-        orderEventPublisher.publish(confirmedEvent(payment, reserved))
+        events.publishEvent(confirmedEvent(payment, reserved))
     }
 
     private fun decline(payment: Payment) {

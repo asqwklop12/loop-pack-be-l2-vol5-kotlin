@@ -158,6 +158,18 @@ class OrderEventPublishIntegrationTest @Autowired constructor(
         verify(exactly = 1) { orderEventPublisher.publish(any()) }
     }
 
+    @DisplayName("재고가 모자라 확정 트랜잭션이 롤백되면 발행하지 않는다.")
+    @Test
+    fun doesNotPublishWhenTransactionRollsBack() {
+        pointService.charge(userId, Money(10_000))
+        val product = savedProduct(price = 1_000, stock = 1)
+        val orderId = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, 2))).id
+
+        runCatching { orderFacade.confirm(userId, orderId) }
+
+        verify(exactly = 0) { orderEventPublisher.publish(any()) }
+    }
+
     @DisplayName("포인트가 모자라 확정이 되돌아가면 발행하지 않는다.")
     @Test
     fun doesNotPublishWhenConfirmRollsBack() {
