@@ -3,6 +3,7 @@ package com.loopers.interfaces.consumer.order
 import com.loopers.config.kafka.KafkaConfig
 import com.loopers.domain.purchase.PurchaseActivityCommand
 import com.loopers.domain.purchase.PurchaseActivityService
+import com.loopers.domain.purchase.PurchaseConflictException
 import org.apache.kafka.clients.consumer.ConsumerRecord
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
@@ -35,6 +36,10 @@ class PurchaseActivityConsumer(
         try {
             purchaseActivityService.record(command)
         } catch (_: DataIntegrityViolationException) {
+            if (purchaseActivityService.conflictsWith(command)) {
+                throw PurchaseConflictException(command.eventId)
+            }
+
             log.info("[{}] 이미 반영한 이벤트라 넘어간다. eventId={}", GROUP, command.eventId)
         }
     }

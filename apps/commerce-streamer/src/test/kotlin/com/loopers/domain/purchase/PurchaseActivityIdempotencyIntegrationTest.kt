@@ -72,6 +72,64 @@ class PurchaseActivityIdempotencyIntegrationTest @Autowired constructor(
         )
     }
 
+    @DisplayName("같은 사실이 다시 오면 충돌이 아니다.")
+    @Test
+    fun sameFactIsNotConflict() {
+        val command = commandOf(1L, 7L to 2, 8L to 1)
+        purchaseActivityService.record(command)
+
+        assertThat(purchaseActivityService.conflictsWith(command)).isFalse()
+    }
+
+    @DisplayName("품목 순서만 다른 것은 충돌이 아니다.")
+    @Test
+    fun orderOfItemsIsNotConflict() {
+        purchaseActivityService.record(commandOf(1L, 7L to 2, 8L to 1))
+
+        assertThat(purchaseActivityService.conflictsWith(commandOf(1L, 8L to 1, 7L to 2))).isFalse()
+    }
+
+    @DisplayName("수량이 다르면 충돌이다.")
+    @Test
+    fun differentQuantityIsConflict() {
+        purchaseActivityService.record(commandOf(1L, 7L to 2))
+
+        assertThat(purchaseActivityService.conflictsWith(commandOf(1L, 7L to 99))).isTrue()
+    }
+
+    @DisplayName("품목이 늘거나 줄면 충돌이다.")
+    @Test
+    fun differentItemsIsConflict() {
+        purchaseActivityService.record(commandOf(1L, 7L to 2))
+
+        assertAll(
+            { assertThat(purchaseActivityService.conflictsWith(commandOf(1L, 7L to 2, 8L to 1))).isTrue() },
+            { assertThat(purchaseActivityService.conflictsWith(commandOf(1L, 9L to 2))).isTrue() },
+        )
+    }
+
+    @DisplayName("구매자나 확정 시각이 다르면 충돌이다.")
+    @Test
+    fun differentBuyerOrTimeIsConflict() {
+        purchaseActivityService.record(commandOf(1L, 7L to 2))
+
+        val otherBuyer = commandOf(1L, 7L to 2).copy(userId = BUYER + 1)
+        val otherTime = commandOf(1L, 7L to 2).copy(confirmedAt = CONFIRMED_AT.plusDays(1))
+
+        assertAll(
+            { assertThat(purchaseActivityService.conflictsWith(otherBuyer)).isTrue() },
+            { assertThat(purchaseActivityService.conflictsWith(otherTime)).isTrue() },
+        )
+    }
+
+    @DisplayName("같은 eventId 로 다른 주문이 오면 충돌이다.")
+    @Test
+    fun differentOrderIsConflict() {
+        purchaseActivityService.record(commandOf(1L, 7L to 2))
+
+        assertThat(purchaseActivityService.conflictsWith(commandOf(2L, 7L to 2))).isTrue()
+    }
+
     companion object {
         private const val BUYER = 42L
         private val CONFIRMED_AT: ZonedDateTime = ZonedDateTime.parse("2026-09-07T01:00:00Z")

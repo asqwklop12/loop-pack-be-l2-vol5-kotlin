@@ -26,4 +26,16 @@ class PurchaseActivityService(
             },
         )
     }
+
+    @Transactional(readOnly = true)
+    fun conflictsWith(command: PurchaseActivityCommand): Boolean {
+        val stored = purchaseActivityRepository.findAllByOrderId(command.orderId)
+
+        if (stored.isEmpty()) return command.items.isNotEmpty()
+
+        return stored.any { it.userId != command.userId } ||
+            stored.any { it.confirmedAt.toInstant() != command.confirmedAt.toInstant() } ||
+            stored.map { it.productId to it.quantity }.toSet() !=
+            command.items.map { it.productId to it.quantity }.toSet()
+    }
 }
