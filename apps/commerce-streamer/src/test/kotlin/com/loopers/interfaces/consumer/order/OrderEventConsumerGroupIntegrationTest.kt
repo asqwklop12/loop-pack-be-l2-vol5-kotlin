@@ -64,6 +64,7 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
         confirmedAt = CONFIRMED_AT,
         items = items.map { OrderConfirmedEvent.Item(productId = it.first, quantity = it.second) },
         eventType = "OrderConfirmed",
+        schemaVersion = SCHEMA_VERSION,
     )
 
     private fun activitiesOf(orderId: Long): List<ProductPurchaseActivity> {
@@ -136,6 +137,7 @@ class OrderEventConsumerGroupIntegrationTest @Autowired constructor(
 
     companion object {
         private const val BUYER = 42L
+        private const val SCHEMA_VERSION = 1
         private const val PARTITIONS = 3
         private const val REDELIVERY_SETTLE_MS = 12_000L
         private const val CONFIRMED_AT = "2026-09-07T01:00:00Z"
