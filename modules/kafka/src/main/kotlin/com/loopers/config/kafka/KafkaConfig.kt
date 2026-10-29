@@ -5,6 +5,7 @@ import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.producer.ProducerConfig
 import org.apache.kafka.common.serialization.ByteArraySerializer
 import org.apache.kafka.common.serialization.StringSerializer
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties
 import org.springframework.context.annotation.Bean
@@ -101,12 +102,19 @@ class KafkaConfig {
     fun defaultRecordListenerContainerFactory(
         kafkaProperties: KafkaProperties,
         @Qualifier(DEAD_LETTER_TEMPLATE) deadLetterKafkaTemplate: KafkaTemplate<Any, Any>,
+        alerts: ObjectProvider<DeadLetterAlert>,
     ): ConcurrentKafkaListenerContainerFactory<*, *> {
         return ConcurrentKafkaListenerContainerFactory<Any, Any>().apply {
             consumerFactory = DefaultKafkaConsumerFactory(tunedConsumerConfig(kafkaProperties))
             containerProperties.ackMode = ContainerProperties.AckMode.MANUAL_IMMEDIATE
             setConcurrency(CONCURRENCY)
-            setCommonErrorHandler(RetryThenDeadLetterErrorHandler(deadLetterKafkaTemplate, retryBackOff()))
+            setCommonErrorHandler(
+                RetryThenDeadLetterErrorHandler(
+                    deadLetterKafkaTemplate,
+                    retryBackOff(),
+                    alerts.orderedStream().toList(),
+                ),
+            )
         }
     }
 
