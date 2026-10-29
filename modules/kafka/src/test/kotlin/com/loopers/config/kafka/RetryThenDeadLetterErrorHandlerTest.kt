@@ -1,5 +1,6 @@
 package com.loopers.config.kafka
 
+import com.fasterxml.jackson.core.JsonParseException
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.kafka.KafkaException
 import org.springframework.kafka.core.KafkaOperations
+import org.springframework.kafka.listener.ListenerExecutionFailedException
 import org.springframework.kafka.listener.MessageListenerContainer
 import org.springframework.kafka.support.SendResult
 import org.springframework.util.backoff.ExponentialBackOff
@@ -59,6 +61,22 @@ class RetryThenDeadLetterErrorHandlerTest {
             { assertThat(sent.captured.topic()).isEqualTo("order.events.v1-dlt") },
             { assertThat(sent.captured.partition()).isEqualTo(PARTITION) },
             { assertThat(sent.captured.key()).isEqualTo(KEY) },
+            { verify(exactly = 0) { container.stopAbnormally(any()) } },
+        )
+    }
+
+    @DisplayName("다시 해봐도 안 되는 실패는 재시도를 건너뛰고 바로 DLT 로 보낸다.")
+    @Test
+    fun skipsRetriesWhenHopeless() {
+        handler.handleRemaining(
+            ListenerExecutionFailedException("리스너 실패", JsonParseException("깨진 본문")),
+            mutableListOf<ConsumerRecord<*, *>>(ConsumerRecord(TOPIC, PARTITION, OFFSET, KEY, "value")),
+            consumer,
+            container,
+        )
+
+        assertAll(
+            { assertThat(sent.captured.topic()).isEqualTo("order.events.v1-dlt") },
             { verify(exactly = 0) { container.stopAbnormally(any()) } },
         )
     }
