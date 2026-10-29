@@ -93,7 +93,7 @@ class KafkaConfig {
             consumerFactory = DefaultKafkaConsumerFactory(tunedConsumerConfig(kafkaProperties))
             containerProperties.ackMode = ContainerProperties.AckMode.MANUAL
             setBatchMessageConverter(BatchMessagingMessageConverter(converter))
-            setConcurrency(CONCURRENCY)
+            setConcurrency(kafkaProperties.listener.concurrency ?: CONCURRENCY)
             setAutoStartup(kafkaProperties.listener.isAutoStartup)
             isBatchListener = true
         }
@@ -108,7 +108,7 @@ class KafkaConfig {
         return ConcurrentKafkaListenerContainerFactory<Any, Any>().apply {
             consumerFactory = DefaultKafkaConsumerFactory(tunedConsumerConfig(kafkaProperties))
             containerProperties.ackMode = ContainerProperties.AckMode.MANUAL_IMMEDIATE
-            setConcurrency(CONCURRENCY)
+            setConcurrency(kafkaProperties.listener.concurrency ?: CONCURRENCY)
             setAutoStartup(kafkaProperties.listener.isAutoStartup)
             setCommonErrorHandler(
                 RetryThenDeadLetterErrorHandler(
