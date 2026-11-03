@@ -13,3 +13,8 @@
 | `message_key`    | `varchar(100)`            | not null          | 카프카 메시지 키 = 파티션 키                 |
 | `status`         | `enum('PENDING','SENT')`  | not null          | 생성 시 `PENDING`                            |
 | `created_at`     | `datetime(6)`             | not null          | 행을 쓴 시각                                 |
+
+| 인덱스                       | 컬럼         |
+| ---------------------------- | ------------ |
+| `idx_outbox_event_status_id` | `status, id` |
+| `idx_outbox_event_event_id`  | `event_id`   |

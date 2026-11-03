@@ -7,12 +7,19 @@ import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
+import jakarta.persistence.Index
 import jakarta.persistence.PrePersist
 import jakarta.persistence.Table
 import java.time.ZonedDateTime
 
 @Entity
-@Table(name = "outbox_event")
+@Table(
+    name = "outbox_event",
+    indexes = [
+        Index(name = "idx_outbox_event_status_id", columnList = "status, id"),
+        Index(name = "idx_outbox_event_event_id", columnList = "event_id"),
+    ],
+)
 class OutboxEvent(
     eventId: String,
     topic: String,
