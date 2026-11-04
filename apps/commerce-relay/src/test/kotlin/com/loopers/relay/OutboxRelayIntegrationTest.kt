@@ -100,14 +100,14 @@ class OutboxRelayIntegrationTest @Autowired constructor(
         )
     }
 
-    @DisplayName("보낸 뒤에도 상태는 바꾸지 않는다. SENT 는 받은 쪽이 찍는다.")
+    @DisplayName("브로커가 받았다고 답한 행은 SENT 로 바꾼다.")
     @Test
-    fun leavesStatusUntouched() {
+    fun marksSentAfterAck() {
         pending(1L)
 
         outboxRelay.relayAll()
 
-        assertThat(outboxEventJpaRepository.findAll().single().status).isEqualTo(OutboxStatus.PENDING)
+        assertThat(outboxEventJpaRepository.findAll().single().status).isEqualTo(OutboxStatus.SENT)
     }
 
     @DisplayName("페이로드를 다시 감싸지 않고 키와 함께 그대로 보낸다.")

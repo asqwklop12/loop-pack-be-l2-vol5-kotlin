@@ -11,7 +11,7 @@
 | `schema_version` | `int`                     | not null          | 페이로드 계약의 버전                         |
 | `payload`        | `text`                    | not null          | 직렬화된 이벤트 JSON                         |
 | `message_key`    | `varchar(100)`            | not null          | 카프카 메시지 키 = 파티션 키                 |
-| `status`         | `enum('PENDING','SENT')`  | not null          | 생성 시 `PENDING`                            |
+| `status`         | `enum('PENDING','SENT')`  | not null          | 생성 시 `PENDING`, 브로커 ack 후 `SENT`      |
 | `created_at`     | `datetime(6)`             | not null          | 행을 쓴 시각                                 |
 
 | 인덱스                       | 컬럼         |

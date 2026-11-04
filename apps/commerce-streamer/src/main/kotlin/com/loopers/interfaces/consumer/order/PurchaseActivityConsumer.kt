@@ -40,7 +40,6 @@ class PurchaseActivityConsumer(
                 throw PurchaseConflictException(command.eventId)
             }
 
-            purchaseActivityFacade.markSent(command.eventId)
             log.info("[{}] 이미 반영한 이벤트라 넘어간다. eventId={}", GROUP, command.eventId)
         }
     }

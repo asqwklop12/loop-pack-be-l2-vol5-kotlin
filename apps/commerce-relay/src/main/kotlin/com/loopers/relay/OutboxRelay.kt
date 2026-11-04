@@ -37,6 +37,7 @@ class OutboxRelay(
         return sending.count { (event, future) ->
             future
                 .mapCatching { it.get(properties.sendTimeout.toMillis(), TimeUnit.MILLISECONDS) }
+                .onSuccess { outboxEventRepository.markSent(event.eventId) }
                 .onFailure { log(event, it) }
                 .isSuccess
         }
