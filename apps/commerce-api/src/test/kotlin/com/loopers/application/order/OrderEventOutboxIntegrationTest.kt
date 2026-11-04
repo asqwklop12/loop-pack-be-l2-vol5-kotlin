@@ -31,9 +31,19 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.test.context.TestPropertySource
 
 @SpringBootTest
+@TestPropertySource(
+    properties = [
+        "spring.kafka.producer.bootstrap-servers=localhost:1",
+        "spring.kafka.producer.properties.max.block.ms=500",
+        "spring.kafka.producer.properties.request.timeout.ms=500",
+        "spring.kafka.producer.properties.delivery.timeout.ms=1000",
+    ],
+)
 class OrderEventOutboxIntegrationTest @Autowired constructor(
     private val orderFacade: OrderFacade,
     private val paymentCallbackHandler: PaymentCallbackHandler,
@@ -42,6 +52,7 @@ class OrderEventOutboxIntegrationTest @Autowired constructor(
     private val brandJpaRepository: BrandJpaRepository,
     private val outboxEventJpaRepository: OutboxEventJpaRepository,
     private val objectMapper: ObjectMapper,
+    @Value("\${order-event.topic}") private val topic: String,
     private val databaseCleanUp: DatabaseCleanUp,
 ) {
     @SpykBean
@@ -98,7 +109,7 @@ class OrderEventOutboxIntegrationTest @Autowired constructor(
         val payload = objectMapper.readValue(row.payload, OrderConfirmedEvent::class.java)
         assertAll(
             { assertThat(row.eventId).isEqualTo(OrderConfirmedEvent.idOf(orderId)) },
-            { assertThat(row.topic).isEqualTo("order.events.v1") },
+            { assertThat(row.topic).isEqualTo(topic) },
             { assertThat(row.eventType).isEqualTo(OrderConfirmedEvent.TYPE) },
             { assertThat(row.schemaVersion).isEqualTo(1) },
             { assertThat(row.key).isEqualTo(orderId.toString()) },
