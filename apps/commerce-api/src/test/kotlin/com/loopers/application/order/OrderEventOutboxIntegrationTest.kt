@@ -6,6 +6,8 @@ import com.loopers.application.payment.PaymentCallbackHandler
 import com.loopers.domain.brand.Brand
 import com.loopers.domain.order.OrderCommand
 import com.loopers.domain.order.OrderConfirmedEvent
+import com.loopers.domain.order.OrderRepository
+import com.loopers.domain.order.OrderStatus
 import com.loopers.domain.outbox.OutboxEventRepository
 import com.loopers.domain.outbox.OutboxStatus
 import com.loopers.domain.payment.CardInfo
@@ -46,6 +48,7 @@ import org.springframework.test.context.TestPropertySource
 )
 class OrderEventOutboxIntegrationTest @Autowired constructor(
     private val orderFacade: OrderFacade,
+    private val orderRepository: OrderRepository,
     private val paymentCallbackHandler: PaymentCallbackHandler,
     private val pointService: PointService,
     private val productJpaRepository: ProductJpaRepository,
@@ -146,7 +149,10 @@ class OrderEventOutboxIntegrationTest @Autowired constructor(
 
         runCatching { orderFacade.confirm(userId, orderId) }
 
-        assertThat(outboxEventJpaRepository.count()).isZero()
+        assertAll(
+            { assertThat(orderRepository.find(orderId)?.status).isEqualTo(OrderStatus.DRAFT) },
+            { assertThat(outboxEventJpaRepository.count()).isZero() },
+        )
     }
 
     @DisplayName("아웃박스에 쓰지 못하면 확정도 되돌아가 재고가 그대로다.")
@@ -161,6 +167,7 @@ class OrderEventOutboxIntegrationTest @Autowired constructor(
 
         assertAll(
             { assertThat(result.isFailure).isTrue() },
+            { assertThat(orderRepository.find(orderId)?.status).isEqualTo(OrderStatus.DRAFT) },
             { assertThat(productJpaRepository.findById(product.id).get().stock.quantity).isEqualTo(5) },
             { assertThat(outboxEventJpaRepository.count()).isZero() },
         )
