@@ -18,7 +18,7 @@ class OrderEventKafkaPublisher(
     override fun publish(event: OrderConfirmedEvent) {
         try {
             kafkaTemplate.send(properties.topic, event.orderId.toString(), stamped(event))
-                .whenCompleteAsync { _, failure ->
+                .whenComplete { _, failure ->
                     if (failure == null) {
                         outboxEventRepository.markSent(event.eventId)
                     } else {
