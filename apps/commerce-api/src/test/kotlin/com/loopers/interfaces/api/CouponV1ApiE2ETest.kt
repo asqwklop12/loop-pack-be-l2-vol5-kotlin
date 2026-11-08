@@ -183,4 +183,59 @@ class CouponV1ApiE2ETest @Autowired constructor(
             )
         }
     }
+
+    private val couponListType =
+        object : ParameterizedTypeReference<ApiResponse<List<CouponV1Dto.Response>>>() {}
+
+    private fun getMyCoupons(userId: Long) = testRestTemplate.exchange(
+        "/api/v1/coupons",
+        HttpMethod.GET,
+        HttpEntity<Any>(HttpHeaders().apply { set("X-USER-ID", userId.toString()) }),
+        couponListType,
+    )
+
+    @DisplayName("GET /api/v1/coupons")
+    @Nested
+    inner class GetMyCoupons {
+        @DisplayName("현재 사용자가 받은 쿠폰만, 발급 시각 내림차순으로 반환한다.")
+        @Test
+        fun returnsOnlyCurrentUsersCouponsLatestFirst() {
+            val first = savedCampaign()
+            val second = savedCampaign()
+            issue(first.id, userId = 1L)
+            issue(second.id, userId = 1L)
+            issue(first.id, userId = 2L)
+
+            val response = getMyCoupons(userId = 1L)
+
+            assertAll(
+                { assertThat(response.statusCode.is2xxSuccessful).isTrue() },
+                { assertThat(response.body?.data?.map { it.campaignId }).containsExactly(second.id, first.id) },
+                { assertThat(response.body?.data?.map { it.userId }).containsOnly(1L) },
+            )
+        }
+
+        @DisplayName("발급 시각이 같으면, couponId 내림차순으로 반환한다.")
+        @Test
+        fun returnsLargerCouponIdFirst_whenIssuedAtIsSame() {
+            val first = issue(savedCampaign().id, userId = 1L).body!!.data!!.id
+            val second = issue(savedCampaign().id, userId = 1L).body!!.data!!.id
+            jdbcTemplate.update("update coupon set created_at = ? where user_id = 1", now.toLocalDateTime())
+
+            val response = getMyCoupons(userId = 1L)
+
+            assertThat(response.body?.data?.map { it.id }).containsExactly(second, first)
+        }
+
+        @DisplayName("받은 쿠폰이 없으면, 빈 목록을 반환한다.")
+        @Test
+        fun returnsEmpty_whenNoCoupons() {
+            val response = getMyCoupons(userId = 1L)
+
+            assertAll(
+                { assertThat(response.statusCode.is2xxSuccessful).isTrue() },
+                { assertThat(response.body?.data).isEmpty() },
+            )
+        }
+    }
 }

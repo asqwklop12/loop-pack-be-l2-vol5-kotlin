@@ -12,4 +12,7 @@ class CouponRepositoryImpl(
 
     override fun find(campaignId: Long, userId: Long): Coupon? =
         couponJpaRepository.findByCampaignIdAndUserId(campaignId, userId)
+
+    override fun findAllByUserId(userId: Long): List<Coupon> =
+        couponJpaRepository.findAllByUserIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(userId)
 }

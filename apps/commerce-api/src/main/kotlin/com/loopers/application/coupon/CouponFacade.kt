@@ -29,5 +29,7 @@ class CouponFacade(
         }
     }
 
+    fun getMyCoupons(userId: Long): List<CouponInfo> = couponService.getAllByUserId(userId).map { CouponInfo.from(it) }
+
     private fun existing(coupon: CouponInfo) = CouponIssueResult(coupon = coupon, newlyIssued = false)
 }

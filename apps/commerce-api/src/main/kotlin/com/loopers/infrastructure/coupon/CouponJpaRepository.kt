@@ -5,4 +5,5 @@ import org.springframework.data.jpa.repository.JpaRepository
 
 interface CouponJpaRepository : JpaRepository<Coupon, Long> {
     fun findByCampaignIdAndUserId(campaignId: Long, userId: Long): Coupon?
+    fun findAllByUserIdAndDeletedAtIsNullOrderByCreatedAtDescIdDesc(userId: Long): List<Coupon>
 }

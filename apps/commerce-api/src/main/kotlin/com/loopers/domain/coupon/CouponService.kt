@@ -13,4 +13,7 @@ class CouponService(
 
     @Transactional(readOnly = true)
     fun find(campaignId: Long, userId: Long): Coupon? = couponRepository.find(campaignId, userId)
+
+    @Transactional(readOnly = true)
+    fun getAllByUserId(userId: Long): List<Coupon> = couponRepository.findAllByUserId(userId)
 }
