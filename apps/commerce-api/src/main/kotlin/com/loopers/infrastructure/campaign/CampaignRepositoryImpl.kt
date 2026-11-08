@@ -9,4 +9,6 @@ class CampaignRepositoryImpl(
     private val campaignJpaRepository: CampaignJpaRepository,
 ) : CampaignRepository {
     override fun save(campaign: Campaign): Campaign = campaignJpaRepository.save(campaign)
+
+    override fun find(id: Long): Campaign? = campaignJpaRepository.findByIdAndDeletedAtIsNull(id)
 }

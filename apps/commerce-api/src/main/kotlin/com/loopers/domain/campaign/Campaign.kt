@@ -49,4 +49,13 @@ class Campaign(
             throw CoreException(ErrorType.BAD_REQUEST, "쿠폰 기간 끝이 이미 지났습니다.")
         }
     }
+
+    fun issue(now: ZonedDateTime) {
+        if (issuedCount >= totalLimit) throw CoreException(ErrorType.BAD_REQUEST, "쿠폰이 모두 발급되었습니다.")
+        if (now.isAfter(endDate)) throw CoreException(ErrorType.BAD_REQUEST, "쿠폰 발급 기간이 지났습니다.")
+        if (!issuable) throw CoreException(ErrorType.BAD_REQUEST, "쿠폰을 발급할 수 없는 캠페인입니다.")
+        if (now.isBefore(startDate)) throw CoreException(ErrorType.BAD_REQUEST, "쿠폰 발급 기간이 아직 시작되지 않았습니다.")
+
+        issuedCount++
+    }
 }
