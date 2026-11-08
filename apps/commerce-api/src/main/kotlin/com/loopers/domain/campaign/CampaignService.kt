@@ -21,6 +21,9 @@ class CampaignService(
         val campaign = campaignRepository.find(id)
             ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $id] 캠페인을 찾을 수 없습니다.")
 
-        campaign.issue(ZonedDateTime.now())
+        val now = ZonedDateTime.now()
+        campaign.checkIssuable(now)
+
+        if (!campaignRepository.increaseIssuedCountWithinLimit(id, now)) throw Campaign.soldOut()
     }
 }

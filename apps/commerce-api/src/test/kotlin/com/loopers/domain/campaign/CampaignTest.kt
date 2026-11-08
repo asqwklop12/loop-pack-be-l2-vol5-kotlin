@@ -96,30 +96,17 @@ class CampaignTest {
         }
     }
 
-    @DisplayName("쿠폰을 발급할 때, ")
+    @DisplayName("쿠폰 발급 가능 여부를 볼 때, ")
     @Nested
     inner class Issue {
-        @DisplayName("기간 안이고 수량이 남았으면, 발급 수가 1 늘어난다.")
+        @DisplayName("기간 안이고 수량이 남았으면, 예외 없이 통과하고 발급 수는 바꾸지 않는다.")
         @Test
-        fun increasesIssuedCount_whenIssuable() {
+        fun passesWithoutChangingIssuedCount_whenIssuable() {
             val campaign = campaign(startDate = now.minusDays(1))
 
-            campaign.issue(now)
+            campaign.checkIssuable(now)
 
-            assertThat(campaign.issuedCount).isEqualTo(1)
-        }
-
-        @DisplayName("한도만큼 발급됐으면, BAD_REQUEST 예외가 발생하고 발급 수가 그대로다.")
-        @Test
-        fun throwsBadRequest_whenSoldOut() {
-            val campaign = campaign(totalLimit = 1, startDate = now.minusDays(1)).also { it.issue(now) }
-
-            val result = assertThrows<CoreException> { campaign.issue(now) }
-
-            assertAll(
-                { assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
-                { assertThat(campaign.issuedCount).isEqualTo(1) },
-            )
+            assertThat(campaign.issuedCount).isZero()
         }
 
         @DisplayName("발급 기간이 지났으면, BAD_REQUEST 예외가 발생한다.")
@@ -127,7 +114,7 @@ class CampaignTest {
         fun throwsBadRequest_whenPeriodEnded() {
             val campaign = campaign(startDate = now.minusDays(1), endDate = now.plusDays(1))
 
-            val result = assertThrows<CoreException> { campaign.issue(now.plusDays(2)) }
+            val result = assertThrows<CoreException> { campaign.checkIssuable(now.plusDays(2)) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
         }
@@ -137,7 +124,7 @@ class CampaignTest {
         fun throwsBadRequest_whenPeriodNotStarted() {
             val campaign = campaign(startDate = now.plusDays(1))
 
-            val result = assertThrows<CoreException> { campaign.issue(now) }
+            val result = assertThrows<CoreException> { campaign.checkIssuable(now) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
         }
