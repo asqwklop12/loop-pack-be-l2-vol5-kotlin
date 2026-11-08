@@ -90,10 +90,14 @@ class OrderEventOutboxIntegrationTest @Autowired constructor(
         )
     }
 
-    private fun approval(orderId: Long) = PaymentCallback(
+    private fun approval(orderId: Long) = callback(orderId, PaymentStatus.SUCCESS)
+
+    private fun decline(orderId: Long) = callback(orderId, PaymentStatus.FAILED)
+
+    private fun callback(orderId: Long, status: PaymentStatus) = PaymentCallback(
         transactionKey = "pgtx_$orderId",
         orderId = orderId,
-        status = PaymentStatus.SUCCESS,
+        status = status,
         declineCode = null,
         declineReason = null,
     )
@@ -138,6 +142,32 @@ class OrderEventOutboxIntegrationTest @Autowired constructor(
             { assertThat(beforeApproval).isZero() },
             { assertThat(outboxEventJpaRepository.findAll().single().key).isEqualTo(orderId.toString()) },
         )
+    }
+
+    @DisplayName("같은 승인 콜백이 두 번 와도 아웃박스에는 한 행만 쌓인다.")
+    @Test
+    fun appendsOnceOnDuplicateApproval() {
+        val product = savedProduct()
+        val orderId = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, 1))).id
+        orderFacade.confirm(userId, orderId, PaymentMethod.CARD, card)
+
+        paymentCallbackHandler.handle(approval(orderId))
+        paymentCallbackHandler.handle(approval(orderId))
+
+        assertThat(outboxEventJpaRepository.findAll().single().eventId)
+            .isEqualTo(OrderConfirmedEvent.idOf(orderId))
+    }
+
+    @DisplayName("거절 콜백이 오면 아웃박스에 쌓지 않는다.")
+    @Test
+    fun doesNotAppendOnDecline() {
+        val product = savedProduct()
+        val orderId = orderFacade.create(userId, listOf(OrderCommand.Line(product.id, 1))).id
+        orderFacade.confirm(userId, orderId, PaymentMethod.CARD, card)
+
+        paymentCallbackHandler.handle(decline(orderId))
+
+        assertThat(outboxEventJpaRepository.count()).isZero()
     }
 
     @DisplayName("포인트가 모자라 확정이 되돌아가면 쌓지 않는다.")
