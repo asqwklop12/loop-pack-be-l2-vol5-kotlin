@@ -41,7 +41,7 @@ class OrderConfirmation(
             order.lines.map { StockReservationCommand(productId = it.productId, quantity = it.quantity) },
         )
 
-        val payment = paymentRepository.save(Payment(orderId = order.id, amount = order.totalAmount))
+        val payment = paymentRepository.save(Payment(userId = userId, orderId = order.id, amount = order.totalAmount))
         val info = OrderInfo.from(orderService.confirm(order))
 
         if (!paymentProcessor.isExternal(method)) {
