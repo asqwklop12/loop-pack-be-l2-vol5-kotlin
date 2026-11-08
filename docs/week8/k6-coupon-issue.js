@@ -1,0 +1,30 @@
+import http from 'k6/http';
+import exec from 'k6/execution';
+import { Counter } from 'k6/metrics';
+
+const BASE = __ENV.BASE_URL || 'http://localhost:8080';
+const CAMPAIGN_ID = __ENV.CAMPAIGN_ID || '2';
+const USER_OFFSET = Number(__ENV.USER_OFFSET || 100000);
+
+const created = new Counter('issue_201');
+const existing = new Counter('issue_200');
+const rejected = new Counter('issue_400');
+const other = new Counter('issue_other');
+
+export const options = {
+  scenarios: {
+    issue: { executor: 'shared-iterations', vus: 100, iterations: 1000, maxDuration: '2m' },
+  },
+  summaryTrendStats: ['avg', 'med', 'p(95)', 'p(99)', 'max'],
+};
+
+export default function () {
+  const userId = USER_OFFSET + exec.scenario.iterationInTest;
+  const res = http.post(`${BASE}/api/v1/coupon-campaigns/${CAMPAIGN_ID}/issues`, null, {
+    headers: { 'X-USER-ID': String(userId) },
+  });
+  if (res.status === 201) created.add(1);
+  else if (res.status === 200) existing.add(1);
+  else if (res.status === 400) rejected.add(1);
+  else other.add(1);
+}
