@@ -35,8 +35,10 @@ class StockReservationService(
         }
     }
 
-    fun commit(orderId: Long): List<StockReservation> =
-        stockReservationRepository.findAllByOrderId(orderId).onEach { it.commit() }
+    @Transactional
+    fun commit(orderId: Long) {
+        stockReservationRepository.findAllByOrderId(orderId).forEach { it.commit() }
+    }
 
     @Transactional
     fun release(orderId: Long) {
