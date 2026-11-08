@@ -2,7 +2,7 @@ import http from 'k6/http';
 import exec from 'k6/execution';
 import { Counter } from 'k6/metrics';
 
-const BASE = __ENV.BASE_URL || 'http://localhost:8080';
+const BASES = (__ENV.BASE_URLS || 'http://localhost:8080').split(',');
 const CAMPAIGN_ID = __ENV.CAMPAIGN_ID || '2';
 const USER_OFFSET = Number(__ENV.USER_OFFSET || 100000);
 
@@ -20,7 +20,7 @@ export const options = {
 
 export default function () {
   const userId = USER_OFFSET + exec.scenario.iterationInTest;
-  const res = http.post(`${BASE}/api/v1/coupon-campaigns/${CAMPAIGN_ID}/issues`, null, {
+  const res = http.post(`${BASES[exec.scenario.iterationInTest % BASES.length]}/api/v1/coupon-campaigns/${CAMPAIGN_ID}/issues`, null, {
     headers: { 'X-USER-ID': String(userId) },
   });
   if (res.status === 201) created.add(1);
