@@ -17,13 +17,19 @@ class CampaignService(
         )
     }
 
-    fun issue(id: Long) {
-        val campaign = campaignRepository.find(id)
-            ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $id] 캠페인을 찾을 수 없습니다.")
+    @Transactional(readOnly = true)
+    fun getIssuance(id: Long): CampaignIssuance = getCampaign(id).issuance()
+
+    fun tryIssue(id: Long): Boolean {
+        val campaign = getCampaign(id)
+        if (campaign.isSoldOut()) return false
 
         val now = ZonedDateTime.now()
         campaign.checkIssuable(now)
 
-        if (!campaignRepository.increaseIssuedCountWithinLimit(id, now)) throw Campaign.soldOut()
+        return campaignRepository.increaseIssuedCountWithinLimit(id, now)
     }
+
+    private fun getCampaign(id: Long): Campaign =
+        campaignRepository.find(id) ?: throw CoreException(ErrorType.NOT_FOUND, "[id = $id] 캠페인을 찾을 수 없습니다.")
 }

@@ -50,11 +50,13 @@ class Campaign(
         }
     }
 
+    fun isSoldOut(): Boolean = issuedCount >= totalLimit
+
+    fun issuance(): CampaignIssuance = CampaignIssuance(issuable = issuable, startDate = startDate, endDate = endDate)
+
     fun checkIssuable(now: ZonedDateTime) {
-        if (issuedCount >= totalLimit) throw soldOut()
-        if (now.isAfter(endDate)) throw CoreException(ErrorType.BAD_REQUEST, "쿠폰 발급 기간이 지났습니다.")
-        if (!issuable) throw CoreException(ErrorType.BAD_REQUEST, "쿠폰을 발급할 수 없는 캠페인입니다.")
-        if (now.isBefore(startDate)) throw CoreException(ErrorType.BAD_REQUEST, "쿠폰 발급 기간이 아직 시작되지 않았습니다.")
+        if (isSoldOut()) throw soldOut()
+        issuance().check(now)
     }
 
     companion object {
