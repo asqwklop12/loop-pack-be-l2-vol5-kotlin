@@ -5,6 +5,7 @@ import com.loopers.domain.coupon.CouponIssuePermits
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.redis.core.RedisTemplate
+import org.springframework.data.redis.core.script.RedisScript
 import org.springframework.stereotype.Component
 import java.util.UUID
 
@@ -15,16 +16,8 @@ class CouponIssueRedisPermits(
 ) : CouponIssuePermits {
     override fun tryAcquire(): String? {
         val token = UUID.randomUUID().toString()
-        redisTemplate.opsForSet().add(KEY, token)
-        val taken = try {
-            redisTemplate.opsForSet().size(KEY) ?: Long.MAX_VALUE
-        } catch (e: RuntimeException) {
-            runCatching { release(token) }
-            throw e
-        }
-        if (taken <= permits) return token
-        release(token)
-        return null
+        val acquired = redisTemplate.execute(ACQUIRE, listOf(KEY), token, permits.toString())
+        return if (acquired == 1L) token else null
     }
 
     override fun release(token: String) {
@@ -33,5 +26,16 @@ class CouponIssueRedisPermits(
 
     companion object {
         const val KEY = "coupon:issue:permits"
+
+        private val ACQUIRE: RedisScript<Long> = RedisScript.of(
+            """
+            if redis.call('SCARD', KEYS[1]) < tonumber(ARGV[2]) then
+              redis.call('SADD', KEYS[1], ARGV[1])
+              return 1
+            end
+            return 0
+            """.trimIndent(),
+            Long::class.java,
+        )
     }
 }
