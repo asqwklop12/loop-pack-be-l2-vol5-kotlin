@@ -2,7 +2,8 @@ package com.loopers.application.coupon
 
 import com.loopers.domain.campaign.Campaign
 import com.loopers.domain.campaign.CampaignIssueCache
-import com.loopers.domain.coupon.CouponIssuePermits
+import com.loopers.domain.coupon.CouponIssueQueue
+import com.loopers.domain.coupon.CouponIssueRequest
 import com.loopers.domain.coupon.IssuedCouponCache
 import com.loopers.infrastructure.campaign.CampaignJpaRepository
 import com.loopers.infrastructure.coupon.CouponJpaRepository
@@ -11,8 +12,10 @@ import com.loopers.support.error.ErrorType
 import com.loopers.utils.DatabaseCleanUp
 import com.ninjasquad.springmockk.MockkBean
 import io.mockk.every
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
@@ -26,6 +29,7 @@ import java.time.ZonedDateTime
 @SpringBootTest
 class CouponIssueRedisFailureIntegrationTest @Autowired constructor(
     private val couponFacade: CouponFacade,
+    private val couponIssueProcessor: CouponIssueProcessor,
     private val campaignJpaRepository: CampaignJpaRepository,
     private val couponJpaRepository: CouponJpaRepository,
     private val jdbcTemplate: JdbcTemplate,
@@ -38,7 +42,15 @@ class CouponIssueRedisFailureIntegrationTest @Autowired constructor(
     private lateinit var campaignIssueCache: CampaignIssueCache
 
     @MockkBean
-    private lateinit var couponIssuePermits: CouponIssuePermits
+    private lateinit var couponIssueQueue: CouponIssueQueue
+
+    @BeforeEach
+    fun setUp() {
+        every { couponIssueQueue.take(any()) } answers {
+            Thread.sleep(200)
+            null
+        }
+    }
 
     @AfterEach
     fun tearDown() = databaseCleanUp.truncateAllTables()
@@ -61,51 +73,27 @@ class CouponIssueRedisFailureIntegrationTest @Autowired constructor(
         every { campaignIssueCache.saveIssuance(any(), any()) } throws redisDown
     }
 
-    @DisplayName("기존 쿠폰·품절·기간 확인에서 Redis 가 죽어 있으면, 건너뛰고 DB 에서 발급한다.")
+    @DisplayName("기존 쿠폰·품절·기간 확인에서 Redis 가 죽어 있어도, 건너뛰고 큐에 접수한다.")
     @Test
-    fun issuesFromDatabase_whenCachesAreDown() {
+    fun acceptsIntoQueue_whenCachesAreDown() {
         val campaign = savedCampaign()
         cachesDown()
-        every { couponIssuePermits.tryAcquire() } returns "token"
-        every { couponIssuePermits.release(any()) } returns Unit
+        every { couponIssueQueue.enqueue(any()) } returns Unit
 
         val result = couponFacade.issue(campaign.id, userId = 1L)
 
         assertAll(
-            { assertThat(result.newlyIssued).isTrue() },
-            { assertThat(couponJpaRepository.count()).isEqualTo(1) },
+            { assertThat(result).isEqualTo(CouponIssueResult.Accepted(campaignId = campaign.id, userId = 1L)) },
+            { verify(exactly = 1) { couponIssueQueue.enqueue(CouponIssueRequest(campaign.id, 1L)) } },
         )
     }
 
-    @DisplayName("Redis 가 죽어 있어도 기간이 지난 캠페인은, 발급 트랜잭션에서 400 으로 거절된다.")
+    @DisplayName("큐에 넣을 때 Redis 가 죽어 있으면, 503 으로 거절하고 DB 에서 발급하지 않는다.")
     @Test
-    fun rejectsInTransaction_whenCachesAreDownAndPeriodEnded() {
+    fun rejectsWithServiceUnavailable_whenQueueIsDown() {
         val campaign = savedCampaign()
         cachesDown()
-        every { couponIssuePermits.tryAcquire() } returns "token"
-        every { couponIssuePermits.release(any()) } returns Unit
-        val now = ZonedDateTime.now()
-        jdbcTemplate.update(
-            "update campaign set start_date = ?, end_date = ? where id = ?",
-            now.minusDays(8).toLocalDateTime(),
-            now.minusDays(1).toLocalDateTime(),
-            campaign.id,
-        )
-
-        val exception = assertThrows<CoreException> { couponFacade.issue(campaign.id, userId = 1L) }
-
-        assertAll(
-            { assertThat(exception.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
-            { assertThat(couponJpaRepository.count()).isZero() },
-        )
-    }
-
-    @DisplayName("발급 자리를 확인할 때 Redis 가 죽어 있으면, 503 으로 거절하고 DB 에서 발급하지 않는다.")
-    @Test
-    fun rejectsWithServiceUnavailable_whenPermitsAreDown() {
-        val campaign = savedCampaign()
-        cachesDown()
-        every { couponIssuePermits.tryAcquire() } throws redisDown
+        every { couponIssueQueue.enqueue(any()) } throws redisDown
 
         val exception = assertThrows<CoreException> { couponFacade.issue(campaign.id, userId = 1L) }
 
@@ -116,19 +104,32 @@ class CouponIssueRedisFailureIntegrationTest @Autowired constructor(
         )
     }
 
-    @DisplayName("토큰 반환에서 Redis 가 죽어 있어도, 발급한 쿠폰은 유지된다.")
+    @DisplayName("워커가 발급할 때 캐시 Redis 가 죽어 있어도, 쿠폰을 발급한다.")
     @Test
-    fun keepsCoupon_whenReleaseFails() {
+    fun issues_whenCachesAreDownInWorker() {
         val campaign = savedCampaign()
         cachesDown()
-        every { couponIssuePermits.tryAcquire() } returns "token"
-        every { couponIssuePermits.release(any()) } throws redisDown
 
-        val result = couponFacade.issue(campaign.id, userId = 1L)
+        couponIssueProcessor.process(CouponIssueRequest(campaign.id, 1L))
 
-        assertAll(
-            { assertThat(result.newlyIssued).isTrue() },
-            { assertThat(couponJpaRepository.count()).isEqualTo(1) },
+        assertThat(couponJpaRepository.count()).isEqualTo(1)
+    }
+
+    @DisplayName("접수 뒤 기간이 지났으면, 워커는 예외 없이 발급하지 않는다.")
+    @Test
+    fun skipsIssue_whenPeriodEndedAfterAccepted() {
+        val campaign = savedCampaign()
+        cachesDown()
+        val now = ZonedDateTime.now()
+        jdbcTemplate.update(
+            "update campaign set start_date = ?, end_date = ? where id = ?",
+            now.minusDays(8).toLocalDateTime(),
+            now.minusDays(1).toLocalDateTime(),
+            campaign.id,
         )
+
+        couponIssueProcessor.process(CouponIssueRequest(campaign.id, 1L))
+
+        assertThat(couponJpaRepository.count()).isZero()
     }
 }

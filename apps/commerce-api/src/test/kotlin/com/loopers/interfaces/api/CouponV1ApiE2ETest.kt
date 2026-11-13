@@ -3,12 +3,13 @@ package com.loopers.interfaces.api
 import com.loopers.domain.campaign.Campaign
 import com.loopers.infrastructure.campaign.CampaignIssueRedisCache
 import com.loopers.infrastructure.campaign.CampaignJpaRepository
-import com.loopers.infrastructure.coupon.CouponIssueRedisPermits
 import com.loopers.infrastructure.coupon.CouponJpaRepository
 import com.loopers.infrastructure.coupon.IssuedCouponRedisCache
 import com.loopers.interfaces.api.coupon.CouponV1Dto
 import com.loopers.utils.DatabaseCleanUp
 import com.loopers.utils.RedisCleanUp
+import com.loopers.utils.awaitCouponIssueQueueDrained
+import com.loopers.utils.eventually
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.DisplayName
@@ -39,13 +40,19 @@ class CouponV1ApiE2ETest @Autowired constructor(
 ) {
     @AfterEach
     fun tearDown() {
-        databaseCleanUp.truncateAllTables()
-        redisCleanUp.truncateAll()
+        try {
+            redisTemplate.awaitCouponIssueQueueDrained()
+        } finally {
+            databaseCleanUp.truncateAllTables()
+            redisCleanUp.truncateAll()
+        }
     }
 
     private val now = ZonedDateTime.now()
 
     private val couponType = object : ParameterizedTypeReference<ApiResponse<CouponV1Dto.Response>>() {}
+
+    private val acceptedType = object : ParameterizedTypeReference<ApiResponse<CouponV1Dto.Accepted>>() {}
 
     private fun savedCampaign(
         totalLimit: Int = 100,
@@ -62,26 +69,48 @@ class CouponV1ApiE2ETest @Autowired constructor(
         couponType,
     )
 
+    private fun request(campaignId: Long, userId: Long = 1L) = testRestTemplate.exchange(
+        "/api/v1/coupon-campaigns/$campaignId/issues",
+        HttpMethod.POST,
+        HttpEntity<Any>(HttpHeaders().apply { set("X-USER-ID", userId.toString()) }),
+        acceptedType,
+    )
+
     private fun issuedCount(campaignId: Long) = campaignJpaRepository.findById(campaignId).get().issuedCount
 
-    private fun permitsTaken() = redisTemplate.opsForSet().size(CouponIssueRedisPermits.KEY) ?: 0L
+    private fun issuedCouponId(campaignId: Long, userId: Long): Long = eventually {
+        val coupon = couponJpaRepository.findAll().singleOrNull { it.campaignId == campaignId && it.userId == userId }
+        assertThat(coupon).isNotNull
+        assertThat(redisTemplate.opsForHash<String, String>().get(IssuedCouponRedisCache.key(campaignId), userId.toString()))
+            .isEqualTo(coupon!!.id.toString())
+        coupon.id
+    }
 
-    private fun fillPermits(count: Int) = repeat(count) { redisTemplate.opsForSet().add(CouponIssueRedisPermits.KEY, "other-$it") }
+    private fun issueAndWait(campaignId: Long, userId: Long = 1L): Long {
+        assertThat(request(campaignId, userId).statusCode).isEqualTo(HttpStatus.ACCEPTED)
+        val couponId = issuedCouponId(campaignId, userId)
+        redisTemplate.awaitCouponIssueQueueDrained()
+        return couponId
+    }
 
     @DisplayName("POST /api/v1/coupon-campaigns/{campaignId}/issues")
     @Nested
     inner class Issue {
-        @DisplayName("처음 발급이면, 201 CREATED 와 쿠폰을 받고 캠페인 발급 수가 1 늘어난다.")
+        @DisplayName("처음 요청이면, 202 ACCEPTED 를 받고 워커가 쿠폰을 발급해 캠페인 발급 수가 1 늘어난다.")
         @Test
-        fun returnsCreated_whenFirstIssue() {
+        fun returnsAcceptedAndIssues_whenFirstRequest() {
             val campaign = savedCampaign()
 
-            val response = issue(campaign.id, userId = 7L)
+            val response = request(campaign.id, userId = 7L)
 
             assertAll(
-                { assertThat(response.statusCode).isEqualTo(HttpStatus.CREATED) },
+                { assertThat(response.statusCode).isEqualTo(HttpStatus.ACCEPTED) },
                 { assertThat(response.body?.data?.campaignId).isEqualTo(campaign.id) },
                 { assertThat(response.body?.data?.userId).isEqualTo(7L) },
+            )
+            issuedCouponId(campaign.id, userId = 7L)
+            redisTemplate.awaitCouponIssueQueueDrained()
+            assertAll(
                 { assertThat(couponJpaRepository.count()).isEqualTo(1) },
                 { assertThat(issuedCount(campaign.id)).isEqualTo(1) },
             )
@@ -93,10 +122,12 @@ class CouponV1ApiE2ETest @Autowired constructor(
             assertThat(issue(campaignId = 999L).statusCode).isEqualTo(HttpStatus.NOT_FOUND)
         }
 
-        @DisplayName("한정 수량이 다 나갔으면, 400 BAD_REQUEST 응답을 받는다.")
+        @DisplayName("한정 수량이 다 나간 뒤 접수된 요청은 워커가 품절로 거절하고, 다시 요청하면 400 BAD_REQUEST 를 받는다.")
         @Test
-        fun returnsBadRequest_whenSoldOut() {
-            val campaign = savedCampaign(totalLimit = 1).also { issue(it.id, userId = 1L) }
+        fun returnsBadRequest_whenRequestedAgainAfterSoldOut() {
+            val campaign = savedCampaign(totalLimit = 1).also { issueAndWait(it.id, userId = 1L) }
+            request(campaign.id, userId = 2L)
+            redisTemplate.awaitCouponIssueQueueDrained()
 
             val response = issue(campaign.id, userId = 2L)
 
@@ -112,7 +143,7 @@ class CouponV1ApiE2ETest @Autowired constructor(
         fun recordsCouponIdInRedis_whenIssued() {
             val campaign = savedCampaign()
 
-            val couponId = issue(campaign.id, userId = 7L).body?.data?.id
+            val couponId = issueAndWait(campaign.id, userId = 7L)
 
             assertThat(redisTemplate.opsForHash<String, String>().get(IssuedCouponRedisCache.key(campaign.id), "7"))
                 .isEqualTo(couponId.toString())
@@ -150,11 +181,11 @@ class CouponV1ApiE2ETest @Autowired constructor(
         @DisplayName("DB 에서 품절로 거절되면, Redis 에 품절 표시가 남는다.")
         @Test
         fun marksSoldOut_whenSoldOutInDatabase() {
-            val campaign = savedCampaign(totalLimit = 1).also { issue(it.id, userId = 1L) }
+            val campaign = savedCampaign(totalLimit = 1).also { issueAndWait(it.id, userId = 1L) }
 
-            issue(campaign.id, userId = 2L)
+            request(campaign.id, userId = 2L)
 
-            assertThat(redisTemplate.hasKey(CampaignIssueRedisCache.soldOutKey(campaign.id))).isTrue()
+            eventually { assertThat(redisTemplate.hasKey(CampaignIssueRedisCache.soldOutKey(campaign.id))).isTrue() }
         }
 
         @DisplayName("처음 요청하면, 캠페인 기간과 발급 가능 여부가 Redis 에 남는다.")
@@ -162,7 +193,8 @@ class CouponV1ApiE2ETest @Autowired constructor(
         fun cachesIssuance_whenFirstRequested() {
             val campaign = savedCampaign()
 
-            issue(campaign.id)
+            request(campaign.id)
+            issuedCouponId(campaign.id, userId = 1L)
 
             assertThat(redisTemplate.opsForHash<String, String>().entries(CampaignIssueRedisCache.campaignKey(campaign.id)))
                 .containsKeys("issuable", "startDate", "endDate")
@@ -186,47 +218,27 @@ class CouponV1ApiE2ETest @Autowired constructor(
             )
         }
 
-        @DisplayName("발급 자리 3개가 모두 차 있으면, 429 TOO_MANY_REQUESTS 를 받고 쿠폰은 발급되지 않는다.")
+        @DisplayName("발급되기 전에 같은 사용자가 여러 번 요청해도, 모두 202 ACCEPTED 를 받고 쿠폰은 한 장만 발급된다.")
         @Test
-        fun returnsTooManyRequests_whenAllPermitsTaken() {
+        fun issuesOnce_whenRequestedRepeatedlyBeforeIssued() {
             val campaign = savedCampaign()
-            fillPermits(3)
 
-            val response = issue(campaign.id)
+            val statuses = List(3) { request(campaign.id, userId = 7L).statusCode }
+            issuedCouponId(campaign.id, userId = 7L)
+            redisTemplate.awaitCouponIssueQueueDrained()
 
             assertAll(
-                { assertThat(response.statusCode).isEqualTo(HttpStatus.TOO_MANY_REQUESTS) },
-                { assertThat(response.body?.meta?.errorCode).isEqualTo("Too Many Requests") },
-                { assertThat(couponJpaRepository.count()).isZero() },
-                { assertThat(issuedCount(campaign.id)).isZero() },
-                { assertThat(permitsTaken()).isEqualTo(3) },
+                { assertThat(statuses).allMatch { it == HttpStatus.ACCEPTED || it == HttpStatus.OK } },
+                { assertThat(couponJpaRepository.count()).isEqualTo(1) },
+                { assertThat(issuedCount(campaign.id)).isEqualTo(1) },
             )
-        }
-
-        @DisplayName("발급 자리가 하나라도 비어 있으면, 201 CREATED 를 받는다.")
-        @Test
-        fun returnsCreated_whenOnePermitLeft() {
-            val campaign = savedCampaign()
-            fillPermits(2)
-
-            assertThat(issue(campaign.id).statusCode).isEqualTo(HttpStatus.CREATED)
-        }
-
-        @DisplayName("발급이 끝나면, 자기 토큰을 반환해 발급 자리가 비어 있다.")
-        @Test
-        fun releasesPermit_afterIssued() {
-            val campaign = savedCampaign()
-
-            issue(campaign.id)
-
-            assertThat(permitsTaken()).isZero()
         }
 
         @DisplayName("이미 발급받았으면, 200 OK 와 같은 couponId 를 받고 발급 수가 늘지 않는다.")
         @Test
         fun returnsOkWithSameCoupon_whenAlreadyIssued() {
             val campaign = savedCampaign()
-            val first = issue(campaign.id, userId = 1L).body?.data?.id
+            val first = issueAndWait(campaign.id, userId = 1L)
 
             val response = issue(campaign.id, userId = 1L)
 
@@ -242,7 +254,7 @@ class CouponV1ApiE2ETest @Autowired constructor(
         @Test
         fun returnsOkWithSameCoupon_whenAlreadyIssuedAndSoldOut() {
             val campaign = savedCampaign(totalLimit = 1)
-            val first = issue(campaign.id, userId = 1L).body?.data?.id
+            val first = issueAndWait(campaign.id, userId = 1L)
 
             val response = issue(campaign.id, userId = 1L)
 
@@ -261,13 +273,14 @@ class CouponV1ApiE2ETest @Autowired constructor(
                 "/api/v1/coupon-campaigns/${campaign.id}/issues?userId=2",
                 HttpMethod.POST,
                 HttpEntity<Any>(HttpHeaders().apply { set("X-USER-ID", "1") }),
-                couponType,
+                acceptedType,
             )
 
             assertAll(
-                { assertThat(response.statusCode).isEqualTo(HttpStatus.CREATED) },
+                { assertThat(response.statusCode).isEqualTo(HttpStatus.ACCEPTED) },
                 { assertThat(response.body?.data?.userId).isEqualTo(1L) },
             )
+            issuedCouponId(campaign.id, userId = 1L)
         }
 
         @DisplayName("발급 기간이 지났으면, 400 BAD_REQUEST 응답을 받는다.")
@@ -331,9 +344,9 @@ class CouponV1ApiE2ETest @Autowired constructor(
         fun returnsOnlyCurrentUsersCouponsLatestFirst() {
             val first = savedCampaign()
             val second = savedCampaign()
-            issue(first.id, userId = 1L)
-            issue(second.id, userId = 1L)
-            issue(first.id, userId = 2L)
+            issueAndWait(first.id, userId = 1L)
+            issueAndWait(second.id, userId = 1L)
+            issueAndWait(first.id, userId = 2L)
 
             val response = getMyCoupons(userId = 1L)
 
@@ -347,8 +360,8 @@ class CouponV1ApiE2ETest @Autowired constructor(
         @DisplayName("발급 시각이 같으면, couponId 내림차순으로 반환한다.")
         @Test
         fun returnsLargerCouponIdFirst_whenIssuedAtIsSame() {
-            val first = issue(savedCampaign().id, userId = 1L).body!!.data!!.id
-            val second = issue(savedCampaign().id, userId = 1L).body!!.data!!.id
+            val first = issueAndWait(savedCampaign().id, userId = 1L)
+            val second = issueAndWait(savedCampaign().id, userId = 1L)
             jdbcTemplate.update("update coupon set created_at = ? where user_id = 1", now.toLocalDateTime())
 
             val response = getMyCoupons(userId = 1L)

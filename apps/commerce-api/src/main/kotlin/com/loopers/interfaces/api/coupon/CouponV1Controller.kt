@@ -1,6 +1,7 @@
 package com.loopers.interfaces.api.coupon
 
 import com.loopers.application.coupon.CouponFacade
+import com.loopers.application.coupon.CouponIssueResult
 import com.loopers.interfaces.api.ApiResponse
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -19,10 +20,11 @@ class CouponV1Controller(
     fun issue(
         @RequestHeader(value = "X-USER-ID") userId: Long,
         @PathVariable(value = "campaignId") campaignId: Long,
-    ): ResponseEntity<ApiResponse<CouponV1Dto.Response>> {
-        val result = couponFacade.issue(campaignId, userId)
-        val status = if (result.newlyIssued) HttpStatus.CREATED else HttpStatus.OK
-
-        return ResponseEntity.status(status).body(ApiResponse.success(CouponV1Dto.Response.from(result.coupon)))
-    }
+    ): ResponseEntity<ApiResponse<Any>> =
+        when (val result = couponFacade.issue(campaignId, userId)) {
+            is CouponIssueResult.Issued ->
+                ResponseEntity.ok(ApiResponse.success(CouponV1Dto.Response.from(result.coupon)))
+            is CouponIssueResult.Accepted ->
+                ResponseEntity.status(HttpStatus.ACCEPTED).body(ApiResponse.success(CouponV1Dto.Accepted.from(result)))
+        }
 }
