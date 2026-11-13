@@ -12,6 +12,7 @@ const RETRY_WAIT_SECONDS = Number(__ENV.RETRY_WAIT_SECONDS || 0.05);
 const created = new Counter('issue_201');
 const existing = new Counter('issue_200');
 const rejected = new Counter('issue_400');
+const accepted = new Counter('issue_202');
 const tooMany = new Counter('issue_429');
 const moved = new Counter('campaign_moves');
 const connectionFailed = new Counter('issue_connection_failed');
@@ -41,6 +42,11 @@ export default function () {
     });
     if (res.status === 0) {
       connectionFailed.add(1);
+      sleep(RETRY_WAIT_SECONDS);
+      continue;
+    }
+    if (res.status === 202) {
+      accepted.add(1);
       sleep(RETRY_WAIT_SECONDS);
       continue;
     }
