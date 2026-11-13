@@ -24,7 +24,11 @@ class CouponIssueRedisQueue(
         }
     }
 
-    override fun take(timeout: Duration): CouponIssueRequest? = redisTemplate.opsForList().rightPop(KEY, timeout)?.let(::decode)
+    override fun take(timeout: Duration, max: Int): List<CouponIssueRequest> {
+        val first = redisTemplate.opsForList().rightPop(KEY, timeout) ?: return emptyList()
+        val rest = if (max > 1) redisTemplate.opsForList().rightPop(KEY, (max - 1).toLong()).orEmpty() else emptyList()
+        return (listOf(first) + rest).map(::decode)
+    }
 
     private fun encode(request: CouponIssueRequest) = "${request.campaignId}:${request.userId}"
 

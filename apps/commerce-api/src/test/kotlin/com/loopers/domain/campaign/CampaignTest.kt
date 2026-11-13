@@ -96,27 +96,59 @@ class CampaignTest {
         }
     }
 
-    @DisplayName("쿠폰 발급 가능 여부를 볼 때, ")
+    @DisplayName("쿠폰을 여러 장 발급할 때, ")
     @Nested
     inner class Issue {
-        @DisplayName("기간 안이고 수량이 남았으면, 예외 없이 통과하고 발급 수는 바꾸지 않는다.")
+        @DisplayName("기간 안이고 수량이 남았으면, 요청한 수만큼 발급 수가 늘고 그 수를 돌려준다.")
         @Test
-        fun passesWithoutChangingIssuedCount_whenIssuable() {
-            val campaign = campaign(startDate = now.minusDays(1))
+        fun increasesByRequested_whenEnoughLeft() {
+            val campaign = campaign(totalLimit = 10, startDate = now.minusDays(1))
 
-            campaign.checkIssuable(now)
+            val granted = campaign.issue(3, now)
 
-            assertThat(campaign.issuedCount).isZero()
+            assertAll(
+                { assertThat(granted).isEqualTo(3) },
+                { assertThat(campaign.issuedCount).isEqualTo(3) },
+            )
         }
 
-        @DisplayName("발급 기간이 지났으면, BAD_REQUEST 예외가 발생한다.")
+        @DisplayName("남은 수량보다 많이 요청하면, 남은 만큼만 발급 수가 늘고 그 수를 돌려준다.")
+        @Test
+        fun increasesByRemaining_whenRequestedMoreThanLeft() {
+            val campaign = campaign(totalLimit = 5, startDate = now.minusDays(1)).apply { issue(3, now) }
+
+            val granted = campaign.issue(4, now)
+
+            assertAll(
+                { assertThat(granted).isEqualTo(2) },
+                { assertThat(campaign.issuedCount).isEqualTo(5) },
+            )
+        }
+
+        @DisplayName("이미 다 나갔으면, 0 을 돌려주고 발급 수는 그대로다.")
+        @Test
+        fun returnsZero_whenSoldOut() {
+            val campaign = campaign(totalLimit = 2, startDate = now.minusDays(1)).apply { issue(2, now) }
+
+            val granted = campaign.issue(1, now)
+
+            assertAll(
+                { assertThat(granted).isZero() },
+                { assertThat(campaign.issuedCount).isEqualTo(2) },
+            )
+        }
+
+        @DisplayName("발급 기간이 지났으면, BAD_REQUEST 예외가 발생하고 발급 수는 그대로다.")
         @Test
         fun throwsBadRequest_whenPeriodEnded() {
             val campaign = campaign(startDate = now.minusDays(1), endDate = now.plusDays(1))
 
-            val result = assertThrows<CoreException> { campaign.checkIssuable(now.plusDays(2)) }
+            val result = assertThrows<CoreException> { campaign.issue(1, now.plusDays(2)) }
 
-            assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
+            assertAll(
+                { assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST) },
+                { assertThat(campaign.issuedCount).isZero() },
+            )
         }
 
         @DisplayName("발급 기간이 아직 시작 전이면, BAD_REQUEST 예외가 발생한다.")
@@ -124,7 +156,7 @@ class CampaignTest {
         fun throwsBadRequest_whenPeriodNotStarted() {
             val campaign = campaign(startDate = now.plusDays(1))
 
-            val result = assertThrows<CoreException> { campaign.checkIssuable(now) }
+            val result = assertThrows<CoreException> { campaign.issue(1, now) }
 
             assertThat(result.errorType).isEqualTo(ErrorType.BAD_REQUEST)
         }

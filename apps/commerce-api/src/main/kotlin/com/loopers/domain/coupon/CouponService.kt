@@ -8,11 +8,10 @@ class CouponService(
     private val couponRepository: CouponRepository,
 ) {
 
-    fun issue(campaignId: Long, userId: Long): Coupon =
-        couponRepository.saveNew(Coupon(campaignId = campaignId, userId = userId))
+    fun issueAll(campaignId: Long, userIds: List<Long>): List<Coupon> =
+        couponRepository.saveAllNew(userIds.map { Coupon(campaignId = campaignId, userId = it) })
 
-    @Transactional(readOnly = true)
-    fun find(campaignId: Long, userId: Long): Coupon? = couponRepository.find(campaignId, userId)
+    fun findAll(campaignId: Long, userIds: Collection<Long>): List<Coupon> = couponRepository.findAll(campaignId, userIds)
 
     @Transactional(readOnly = true)
     fun getAllByUserId(userId: Long): List<Coupon> = couponRepository.findAllByUserId(userId)

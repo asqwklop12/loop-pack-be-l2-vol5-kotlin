@@ -1,7 +1,7 @@
 package com.loopers.domain.coupon
 
 interface CouponRepository {
-    fun saveNew(coupon: Coupon): Coupon
-    fun find(campaignId: Long, userId: Long): Coupon?
+    fun saveAllNew(coupons: List<Coupon>): List<Coupon>
+    fun findAll(campaignId: Long, userIds: Collection<Long>): List<Coupon>
     fun findAllByUserId(userId: Long): List<Coupon>
 }

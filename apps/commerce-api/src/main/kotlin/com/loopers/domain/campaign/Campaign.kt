@@ -50,13 +50,13 @@ class Campaign(
         }
     }
 
-    fun isSoldOut(): Boolean = issuedCount >= totalLimit
-
     fun issuance(): CampaignIssuance = CampaignIssuance(issuable = issuable, startDate = startDate, endDate = endDate)
 
-    fun checkIssuable(now: ZonedDateTime) {
-        if (isSoldOut()) throw soldOut()
+    fun issue(count: Int, now: ZonedDateTime): Int {
         issuance().check(now)
+        val granted = minOf(count, totalLimit - issuedCount)
+        issuedCount += granted
+        return granted
     }
 
     companion object {

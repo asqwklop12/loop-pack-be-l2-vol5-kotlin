@@ -1,24 +1,15 @@
 package com.loopers.infrastructure.campaign
 
 import com.loopers.domain.campaign.Campaign
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
-import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
-import org.springframework.data.repository.query.Param
-import java.time.ZonedDateTime
 
 interface CampaignJpaRepository : JpaRepository<Campaign, Long> {
     fun findByIdAndDeletedAtIsNull(id: Long): Campaign?
 
-    @Modifying
-    @Query(
-        """
-        update Campaign c
-           set c.issuedCount = c.issuedCount + 1,
-               c.updatedAt = :now
-         where c.id = :id
-           and c.issuedCount + 1 <= c.totalLimit
-        """,
-    )
-    fun increaseIssuedCountWithinLimit(@Param("id") id: Long, @Param("now") now: ZonedDateTime): Int
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select c from Campaign c where c.id = :id and c.deletedAt is null")
+    fun findByIdForUpdate(id: Long): Campaign?
 }

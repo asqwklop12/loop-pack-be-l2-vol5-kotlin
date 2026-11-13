@@ -12,8 +12,20 @@ class CouponIssuer(
     private val couponService: CouponService,
 ) {
     @Transactional
-    fun issueUnlessSoldOut(campaignId: Long, userId: Long): Coupon? {
-        if (!campaignService.tryIssue(campaignId)) return null
-        return couponService.issue(campaignId, userId)
+    fun issueAll(campaignId: Long, userIds: List<Long>): CouponBatchIssue {
+        val requested = userIds.distinct()
+        val existing = couponService.findAll(campaignId, requested)
+        val holders = existing.map { it.userId }.toSet()
+        val newcomers = requested.filterNot { it in holders }
+        if (newcomers.isEmpty()) return CouponBatchIssue(coupons = existing, soldOut = false)
+
+        val granted = campaignService.issue(campaignId, newcomers.size)
+        val issued = couponService.issueAll(campaignId, newcomers.take(granted))
+        return CouponBatchIssue(coupons = existing + issued, soldOut = granted < newcomers.size)
     }
 }
+
+data class CouponBatchIssue(
+    val coupons: List<Coupon>,
+    val soldOut: Boolean,
+)

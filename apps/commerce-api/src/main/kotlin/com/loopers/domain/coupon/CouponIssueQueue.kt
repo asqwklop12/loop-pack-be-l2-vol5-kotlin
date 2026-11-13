@@ -5,5 +5,5 @@ import java.time.Duration
 interface CouponIssueQueue {
     fun enqueue(request: CouponIssueRequest)
 
-    fun take(timeout: Duration): CouponIssueRequest?
+    fun take(timeout: Duration, max: Int): List<CouponIssueRequest>
 }

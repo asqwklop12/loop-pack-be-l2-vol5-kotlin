@@ -46,9 +46,9 @@ class CouponIssueRedisFailureIntegrationTest @Autowired constructor(
 
     @BeforeEach
     fun setUp() {
-        every { couponIssueQueue.take(any()) } answers {
+        every { couponIssueQueue.take(any(), any()) } answers {
             Thread.sleep(200)
-            null
+            emptyList()
         }
     }
 
@@ -110,7 +110,7 @@ class CouponIssueRedisFailureIntegrationTest @Autowired constructor(
         val campaign = savedCampaign()
         cachesDown()
 
-        couponIssueProcessor.process(CouponIssueRequest(campaign.id, 1L))
+        couponIssueProcessor.process(campaign.id, listOf(1L))
 
         assertThat(couponJpaRepository.count()).isEqualTo(1)
     }
@@ -128,7 +128,7 @@ class CouponIssueRedisFailureIntegrationTest @Autowired constructor(
             campaign.id,
         )
 
-        couponIssueProcessor.process(CouponIssueRequest(campaign.id, 1L))
+        couponIssueProcessor.process(campaign.id, listOf(1L))
 
         assertThat(couponJpaRepository.count()).isZero()
     }
