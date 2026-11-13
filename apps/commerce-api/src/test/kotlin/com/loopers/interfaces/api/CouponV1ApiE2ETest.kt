@@ -3,6 +3,7 @@ package com.loopers.interfaces.api
 import com.loopers.domain.campaign.Campaign
 import com.loopers.infrastructure.campaign.CampaignIssueRedisCache
 import com.loopers.infrastructure.campaign.CampaignJpaRepository
+import com.loopers.infrastructure.coupon.CouponIssueRedisQueue
 import com.loopers.infrastructure.coupon.CouponJpaRepository
 import com.loopers.infrastructure.coupon.IssuedCouponRedisCache
 import com.loopers.interfaces.api.coupon.CouponV1Dto
@@ -215,6 +216,34 @@ class CouponV1ApiE2ETest @Autowired constructor(
             assertAll(
                 { assertThat(response.statusCode).isEqualTo(HttpStatus.BAD_REQUEST) },
                 { assertThat(couponJpaRepository.count()).isZero() },
+            )
+        }
+
+        @DisplayName("요청하면, 요청한 사용자 Set 에 사용자가 남는다.")
+        @Test
+        fun recordsRequestedUser_whenRequested() {
+            val campaign = savedCampaign()
+
+            request(campaign.id, userId = 7L)
+            issuedCouponId(campaign.id, userId = 7L)
+
+            assertThat(redisTemplate.opsForSet().isMember(CouponIssueRedisQueue.requestedKey(campaign.id), "7")).isTrue()
+        }
+
+        @DisplayName("이미 요청한 사용자면, 202 ACCEPTED 를 받고 큐에 다시 넣지 않는다.")
+        @Test
+        fun returnsAcceptedWithoutEnqueue_whenAlreadyRequested() {
+            val campaign = savedCampaign()
+            redisTemplate.opsForSet().add(CouponIssueRedisQueue.requestedKey(campaign.id), "7")
+
+            val response = request(campaign.id, userId = 7L)
+            request(campaign.id, userId = 8L)
+            issuedCouponId(campaign.id, userId = 8L)
+            redisTemplate.awaitCouponIssueQueueDrained()
+
+            assertAll(
+                { assertThat(response.statusCode).isEqualTo(HttpStatus.ACCEPTED) },
+                { assertThat(couponJpaRepository.findAll().map { it.userId }).containsExactly(8L) },
             )
         }
 
