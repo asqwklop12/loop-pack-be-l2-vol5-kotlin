@@ -1,7 +1,9 @@
 package com.loopers.interfaces.api.admin
 
 import com.loopers.application.brand.BrandInfo
+import com.loopers.application.campaign.CampaignInfo
 import com.loopers.application.product.ProductInfo
+import java.time.ZonedDateTime
 
 class AdminV1Dto {
     class BrandV1 {
@@ -50,6 +52,37 @@ class AdminV1Dto {
                     brandName = info.brandName,
                     likeCount = info.likeCount,
                     status = info.status,
+                )
+            }
+        }
+    }
+
+    class CampaignV1 {
+        data class CreateRequest(
+            val name: String,
+            val totalLimit: Int,
+            val startDate: ZonedDateTime,
+            val endDate: ZonedDateTime,
+        )
+
+        data class Response(
+            val id: Long,
+            val name: String,
+            val issuable: Boolean,
+            val totalLimit: Int,
+            val issuedCount: Int,
+            val startDate: ZonedDateTime,
+            val endDate: ZonedDateTime,
+        ) {
+            companion object {
+                fun from(info: CampaignInfo) = Response(
+                    id = info.id,
+                    name = info.name,
+                    issuable = info.issuable,
+                    totalLimit = info.totalLimit,
+                    issuedCount = info.issuedCount,
+                    startDate = info.startDate,
+                    endDate = info.endDate,
                 )
             }
         }
