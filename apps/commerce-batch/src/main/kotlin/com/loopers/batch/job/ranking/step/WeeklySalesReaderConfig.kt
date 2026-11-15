@@ -6,6 +6,7 @@ import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuild
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import java.time.LocalDate
 import javax.sql.DataSource
 
 @Configuration
@@ -22,14 +23,26 @@ class WeeklySalesReaderConfig(
             .dataSource(dataSource)
             .sql(SELECT_WEEKLY_SALES)
             .queryArguments(snapshotId)
-            .rowMapper { rs, _ -> ProductSales(rs.getLong("product_id"), rs.getLong("sales_quantity")) }
+            .rowMapper { rs, _ ->
+                ProductSales(
+                    snapshotId = rs.getString("snapshot_id"),
+                    periodStart = rs.getObject("period_start", LocalDate::class.java),
+                    productId = rs.getLong("product_id"),
+                    salesQuantity = rs.getLong("sales_quantity"),
+                    ranking = rs.getInt("ranking"),
+                )
+            }
             .build()
 
     companion object {
         const val READER_NAME = "weeklySalesReader"
 
         private val SELECT_WEEKLY_SALES = """
-            SELECT product_id, sales_quantity
+            SELECT SUBSTRING_INDEX(snapshot_id, '_r', 1) AS snapshot_id,
+                   DATE(period_start) AS period_start,
+                   product_id,
+                   sales_quantity,
+                   DENSE_RANK() OVER (ORDER BY sales_quantity DESC) AS ranking
             FROM product_sales_snapshot
             WHERE snapshot_id = ?
             ORDER BY sales_quantity DESC, product_id

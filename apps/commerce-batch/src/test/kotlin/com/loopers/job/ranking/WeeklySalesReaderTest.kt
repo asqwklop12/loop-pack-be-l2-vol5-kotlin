@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
+import java.time.LocalDate
 import java.time.LocalDateTime
 
 @SpringBootTest(properties = ["spring.batch.job.enabled=false"])
@@ -36,7 +37,7 @@ class WeeklySalesReaderTest @Autowired constructor(
         snapshot("2026_11_2_r1", productId = 2L, salesQuantity = 90L)
         snapshot("2026_11_3_r1", productId = 3L, salesQuantity = 70L)
 
-        assertThat(readAll("2026_11_2_r1")).containsExactly(ProductSales(2L, 90L))
+        assertThat(readAll("2026_11_2_r1")).containsExactly(sales(productId = 2L, salesQuantity = 90L, ranking = 1))
     }
 
     @DisplayName("판매 수량이 많은 순으로 읽고, 수량이 같으면 상품 id 가 작은 순으로 읽는다.")
@@ -48,10 +49,37 @@ class WeeklySalesReaderTest @Autowired constructor(
         snapshot("2026_11_2_r1", productId = 4L, salesQuantity = 5L)
 
         assertThat(readAll("2026_11_2_r1")).containsExactly(
-            ProductSales(2L, 90L),
-            ProductSales(1L, 40L),
-            ProductSales(3L, 40L),
-            ProductSales(4L, 5L),
+            sales(productId = 2L, salesQuantity = 90L, ranking = 1),
+            sales(productId = 1L, salesQuantity = 40L, ranking = 2),
+            sales(productId = 3L, salesQuantity = 40L, ranking = 2),
+            sales(productId = 4L, salesQuantity = 5L, ranking = 3),
+        )
+    }
+
+    @DisplayName("스냅샷 식별자는 리비전을 떼고, 주 시작일은 날짜로 읽는다.")
+    @Test
+    fun readsSnapshotIdWithoutRevisionAndPeriodStartAsDate() {
+        snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 20L)
+
+        val read = readAll("2026_11_2_r1").single()
+
+        assertThat(read.snapshotId).isEqualTo("2026_11_2")
+        assertThat(read.periodStart).isEqualTo(LocalDate.parse("2026-11-09"))
+    }
+
+    @DisplayName("판매 수량이 같으면 같은 순위를 주고, 다음 순위는 건너뛰지 않는다.")
+    @Test
+    fun givesSameRankingToTies_withoutSkippingNextRanking() {
+        snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 30L)
+        snapshot("2026_11_2_r1", productId = 2L, salesQuantity = 30L)
+        snapshot("2026_11_2_r1", productId = 3L, salesQuantity = 30L)
+        snapshot("2026_11_2_r1", productId = 4L, salesQuantity = 10L)
+
+        assertThat(readAll("2026_11_2_r1").map { it.productId to it.ranking }).containsExactly(
+            1L to 1,
+            2L to 1,
+            3L to 1,
+            4L to 2,
         )
     }
 
@@ -62,6 +90,15 @@ class WeeklySalesReaderTest @Autowired constructor(
 
         assertThat(readAll("2026_11_2_r1")).isEmpty()
     }
+
+    private fun sales(productId: Long, salesQuantity: Long, ranking: Int) =
+        ProductSales(
+            snapshotId = "2026_11_2",
+            periodStart = LocalDate.parse("2026-11-09"),
+            productId = productId,
+            salesQuantity = salesQuantity,
+            ranking = ranking,
+        )
 
     private fun readAll(snapshotId: String): List<ProductSales> {
         val stepExecution = MetaDataInstanceFactory.createStepExecution(
