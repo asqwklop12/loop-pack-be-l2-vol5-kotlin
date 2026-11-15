@@ -5,10 +5,11 @@
 ## 실행
 
 ```bash
-./gradlew :apps:commerce-batch:bootRun --args='--job.name=weeklySalesSnapshotJob requestDate=2026-11-16,java.time.LocalDate'
+./gradlew :apps:commerce-batch:bootRun --args='--job.name=weeklySalesSnapshotJob requestDate=2026-11-16,java.time.LocalDate snapshotId=2026_11_2_r1'
 ```
 
 - `requestDate` 의 직전 주(월~일)를 집계한다.
+- 같은 잡에서 이어서 랭킹을 매긴다. `snapshotId` 는 랭킹을 매길 스냅샷이고, 보통 아래 표의 `requestDate` 에 맞는 값을 넘긴다.
 
 | `requestDate` | 집계 구간 (UTC)         | `snapshot_id`  |
 | ------------- | ----------------------- | -------------- |
