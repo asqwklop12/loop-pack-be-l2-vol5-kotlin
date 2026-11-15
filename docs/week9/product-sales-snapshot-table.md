@@ -14,7 +14,7 @@
 | `updated_at`     | `datetime(6)` | not null           | BaseEntity                                          |
 | `deleted_at`     | `datetime(6)` |                    | BaseEntity, null 이면 삭제 안 됨                    |
 
-`snapshot_id` 의 주차는 월요일부터 일요일까지를 한 주로 센다. 주는 월요일이 속한 달에 들어가고, 그 달의 n 번째 월요일로 시작하는 주가 n 주차다.
+`snapshot_id` 의 월은 두 자리로 쓴다 (`2026_03_1_r1`). 주차는 월요일부터 일요일까지를 한 주로 센다. 주는 월요일이 속한 달에 들어가고, 그 달의 n 번째 월요일로 시작하는 주가 n 주차다.
 
 | 주 (월~일)   | `snapshot_id` |
 | ------------ | ------------- |

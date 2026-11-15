@@ -1,8 +1,6 @@
 package com.loopers.domain.ranking
 
 import com.loopers.domain.BaseEntity
-import com.loopers.support.error.CoreException
-import com.loopers.support.error.ErrorType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Index
@@ -54,14 +52,12 @@ class ProductSalesSnapshot(
         protected set
 
     init {
-        if (snapshotId.isBlank()) {
-            throw CoreException(ErrorType.BAD_REQUEST, "스냅샷 식별자가 비어 있습니다.")
-        }
-        if (!periodStart.isBefore(periodEnd)) {
-            throw CoreException(ErrorType.BAD_REQUEST, "구간 시작이 끝보다 앞서야 합니다. [시작 = $periodStart, 끝 = $periodEnd]")
-        }
-        if (salesQuantity <= 0) {
-            throw CoreException(ErrorType.BAD_REQUEST, "판매 수량은 1 이상이어야 합니다. [판매 수량 = $salesQuantity]")
-        }
+        require(SNAPSHOT_ID_FORMAT.matches(snapshotId)) { "스냅샷 식별자 형식이 아닙니다. [스냅샷 식별자 = $snapshotId]" }
+        require(periodStart.isBefore(periodEnd)) { "구간 시작이 끝보다 앞서야 합니다. [시작 = $periodStart, 끝 = $periodEnd]" }
+        require(salesQuantity > 0) { "판매 수량은 1 이상이어야 합니다. [판매 수량 = $salesQuantity]" }
+    }
+
+    companion object {
+        private val SNAPSHOT_ID_FORMAT = Regex("""\d{4}_(0[1-9]|1[0-2])_[1-5]_r[1-9]\d*""")
     }
 }
