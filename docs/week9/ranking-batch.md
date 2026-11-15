@@ -25,3 +25,13 @@ FROM product_sales_snapshot
 WHERE snapshot_id = '2026_11_2_r1'
 ORDER BY sales_quantity DESC, product_id;
 ```
+
+## 재시작 확인
+
+랭킹 계산 전에, 청크 스텝이 실패한 뒤 같은 파라미터로 다시 실행하면 커밋된 청크 다음부터 이어 가는지 확인했다. `BatchRestartProbeTest` 에 있다.
+
+- 입력은 `product_sales_snapshot` 에 `snapshot_id = 'probe-1'` 로 고정한 상품 7·8·9 이다.
+- 청크 크기 2, 리더는 상품 id 순으로 읽고, 라이터는 확인용 테이블 `batch_restart_probe` 에 넣는다. 확인용 테이블은 기본 키가 `(snapshot_id, product_id)` 라서 같은 상품을 두 번 쓰면 오류가 난다.
+- 첫 실행은 상품 9 에서 실패시킨다. 잡은 `FAILED`, 확인 테이블에는 7·8 만 남고, DB 에 저장된 리더 위치 `purchaseProductProbe.read.count` 는 2 다.
+- 같은 파라미터로 다시 실행하면 같은 JobInstance 의 새 JobExecution 으로 `COMPLETED` 가 되고, 라이터는 9 만 더 써서 7·8·9 가 된다.
+- 두 실행 사이에 입력·확인 행·Batch metadata 를 지우지 않는다. 리더·라이터·JobRepository 는 같은 DataSource 와 트랜잭션 매니저를 쓴다.
