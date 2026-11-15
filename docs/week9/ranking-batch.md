@@ -2,6 +2,12 @@
 
 - 청크 단위로 처리하고, 청크 크기는 100 이다.
 
+## 스냅샷
+
+- `weeklySalesSnapshotJob` 의 첫 스텝이 tasklet 으로 스냅샷을 만든다. `requestDate` 직전 주(월~일)에 확정된 구매기록을 상품별로 합쳐 `product_sales_snapshot` 에 넣는다.
+- 랭킹 스텝은 그 다음 스텝이고, 리더가 이 스냅샷을 읽는다.
+- 테이블 구조는 `product-sales-snapshot-table.md`, 실행 방법은 `weekly-sales-snapshot-run.md` 에 있다.
+
 ## 리더
 
 - 스냅샷은 JDBC 로 읽는다. 리더는 Spring Batch 의 `JdbcCursorItemReader` 를 쓴다.
