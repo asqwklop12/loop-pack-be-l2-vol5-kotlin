@@ -2,6 +2,8 @@ package com.loopers.batch.job.ranking
 
 import com.loopers.batch.job.ranking.step.ProductSales
 import com.loopers.batch.job.ranking.step.WeeklySalesReaderConfig
+import com.loopers.batch.job.ranking.step.WeeklyRankingDecider
+import com.loopers.batch.job.ranking.step.WeeklyRankingWriterConfig
 import com.loopers.batch.job.ranking.step.WeeklySalesSnapshotTasklet
 import com.loopers.batch.listener.JobListener
 import com.loopers.batch.listener.StepMonitorListener
@@ -11,6 +13,7 @@ import org.springframework.batch.core.configuration.annotation.JobScope
 import org.springframework.batch.core.job.builder.JobBuilder
 import org.springframework.batch.core.repository.JobRepository
 import org.springframework.batch.core.step.builder.StepBuilder
+import org.springframework.batch.item.database.JdbcBatchItemWriter
 import org.springframework.batch.item.database.JdbcCursorItemReader
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -27,20 +30,25 @@ class WeeklySalesSnapshotJobConfig(
     private val stepMonitorListener: StepMonitorListener,
     private val weeklySalesSnapshotTasklet: WeeklySalesSnapshotTasklet,
     @param:Qualifier(WeeklySalesReaderConfig.READER_NAME) private val weeklySalesReader: JdbcCursorItemReader<ProductSales>,
+    @param:Qualifier(WeeklyRankingWriterConfig.WRITER_NAME) private val weeklyRankingWriter: JdbcBatchItemWriter<ProductSales>,
+    private val weeklyRankingDecider: WeeklyRankingDecider,
 ) {
     companion object {
         const val JOB_NAME = "weeklySalesSnapshotJob"
         private const val STEP_NAME = "weeklySalesSnapshotStep"
-        private const val RANKING_STEP_NAME = "weeklySalesRankingStep"
+        const val RANKING_STEP_NAME = "weeklySalesRankingStep"
         private const val CHUNK_SIZE = 100
     }
 
     @Bean(JOB_NAME)
     fun weeklySalesSnapshotJob(): Job =
         JobBuilder(JOB_NAME, jobRepository)
-            .start(weeklySalesSnapshotStep())
-            .next(weeklySalesRankingStep())
             .listener(jobListener)
+            .start(weeklySalesSnapshotStep())
+            .next(weeklyRankingDecider)
+            .on(WeeklyRankingDecider.RANKING_EXISTS).end()
+            .from(weeklyRankingDecider).on("*").to(weeklySalesRankingStep())
+            .end()
             .build()
 
     @JobScope
@@ -57,6 +65,7 @@ class WeeklySalesSnapshotJobConfig(
         StepBuilder(RANKING_STEP_NAME, jobRepository)
             .chunk<ProductSales, ProductSales>(CHUNK_SIZE, transactionManager)
             .reader(weeklySalesReader)
+            .writer(weeklyRankingWriter)
             .listener(stepMonitorListener)
             .build()
 }

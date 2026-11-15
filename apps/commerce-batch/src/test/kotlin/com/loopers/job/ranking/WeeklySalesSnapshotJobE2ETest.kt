@@ -1,5 +1,6 @@
 package com.loopers.job.ranking
 
+import com.loopers.batch.job.ranking.SnapshotWeek
 import com.loopers.batch.job.ranking.WeeklySalesSnapshotJobConfig
 import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
@@ -37,11 +38,13 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
     fun setUp() {
         jobLauncherTestUtils.job = job
         jdbcTemplate.execute(CREATE_PURCHASE_ACTIVITY)
+        jdbcTemplate.execute(CREATE_PRODUCT_RANKING)
     }
 
     @AfterEach
     fun tearDown() {
         jdbcTemplate.execute("TRUNCATE TABLE product_purchase_activity")
+        jdbcTemplate.execute("TRUNCATE TABLE product_ranking")
         databaseCleanUp.truncateAllTables()
         jobRepositoryTestUtils.removeJobExecutions()
     }
@@ -104,10 +107,73 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(execution.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
     }
 
-    private fun launch(requestDate: String): ExitStatus =
-        jobLauncherTestUtils.launchJob(
-            JobParametersBuilder().addLocalDate("requestDate", LocalDate.parse(requestDate)).toJobParameters(),
+    @DisplayName("직전 주 스냅샷으로 판매 수량 순위를 매겨 랭킹으로 남긴다.")
+    @Test
+    fun writesRankingFromLastWeekSnapshot() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 2L, quantity = 9, confirmedAt = "2026-11-11T00:00:00")
+        purchase(productId = 3L, quantity = 3, confirmedAt = "2026-11-12T00:00:00")
+        purchase(productId = 4L, quantity = 1, confirmedAt = "2026-11-13T00:00:00")
+
+        val exitStatus = launch("2026-11-16")
+
+        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(rankingRows()).containsExactly(
+            RankingRow("2026_11_2", "2026-11-09", 2L, 9L, 1),
+            RankingRow("2026_11_2", "2026-11-09", 1L, 3L, 2),
+            RankingRow("2026_11_2", "2026-11-09", 3L, 3L, 2),
+            RankingRow("2026_11_2", "2026-11-09", 4L, 1L, 3),
+        )
+    }
+
+    @DisplayName("같은 주의 랭킹이 이미 있으면, 랭킹을 다시 쓰지 않는다.")
+    @Test
+    fun skipsRanking_whenWeekAlreadyRanked() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        jdbcTemplate.update(
+            """
+            INSERT INTO product_ranking
+                (snapshot_id, period_start, product_id, score, ranking, created_at, updated_at)
+            VALUES ('2026_11_2', '2026-11-09', 99, 1, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            """.trimIndent(),
+        )
+
+        val exitStatus = launch("2026-11-16")
+
+        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(rankingRows().map { it.productId }).containsExactly(99L)
+    }
+
+    private fun launch(requestDate: String): ExitStatus {
+        val date = LocalDate.parse(requestDate)
+        return jobLauncherTestUtils.launchJob(
+            JobParametersBuilder()
+                .addLocalDate("requestDate", date)
+                .addString("snapshotId", SnapshotWeek.endedBefore(date).snapshotId)
+                .toJobParameters(),
         ).exitStatus
+    }
+
+    private fun rankingRows(): List<RankingRow> =
+        jdbcTemplate.query(
+            "SELECT snapshot_id, period_start, product_id, score, ranking FROM product_ranking ORDER BY ranking, product_id",
+        ) { rs, _ ->
+            RankingRow(
+                snapshotId = rs.getString("snapshot_id"),
+                periodStart = rs.getObject("period_start", LocalDate::class.java).toString(),
+                productId = rs.getLong("product_id"),
+                score = rs.getLong("score"),
+                ranking = rs.getInt("ranking"),
+            )
+        }
+
+    private data class RankingRow(
+        val snapshotId: String,
+        val periodStart: String,
+        val productId: Long,
+        val score: Long,
+        val ranking: Int,
+    )
 
     private fun purchase(productId: Long, quantity: Int, confirmedAt: String) {
         val at = LocalDateTime.parse(confirmedAt)
@@ -162,6 +228,22 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
                 confirmed_at datetime(6) NOT NULL,
                 PRIMARY KEY (id),
                 UNIQUE KEY uk_purchase_activity_order_product (order_id, product_id)
+            )
+        """.trimIndent()
+
+        private val CREATE_PRODUCT_RANKING = """
+            CREATE TABLE IF NOT EXISTS product_ranking (
+                id bigint NOT NULL AUTO_INCREMENT,
+                created_at datetime(6) NOT NULL,
+                deleted_at datetime(6) DEFAULT NULL,
+                updated_at datetime(6) NOT NULL,
+                snapshot_id varchar(30) NOT NULL,
+                period_start date NOT NULL,
+                product_id bigint NOT NULL,
+                score bigint NOT NULL,
+                ranking int NOT NULL,
+                PRIMARY KEY (id),
+                UNIQUE KEY uk_product_ranking_snapshot_product (snapshot_id, product_id)
             )
         """.trimIndent()
     }
