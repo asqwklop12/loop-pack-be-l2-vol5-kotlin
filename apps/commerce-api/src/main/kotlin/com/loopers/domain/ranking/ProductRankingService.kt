@@ -8,7 +8,12 @@ import java.time.ZonedDateTime
 @Component
 class ProductRankingService(
     private val productRankingRepository: ProductRankingRepository,
+    private val productRankingPointerRepository: ProductRankingPointerRepository,
 ) {
+    @Transactional(readOnly = true)
+    fun findPointer(periodStart: LocalDate): ProductRankingPointer? =
+        productRankingPointerRepository.findBySnapshotId(ProductRankingPointer.snapshotIdOf(periodStart))
+
     @Transactional(readOnly = true)
     fun findFirstWrittenAt(periodStart: LocalDate): ZonedDateTime? =
         productRankingRepository.findFirstWrittenAt(periodStart)

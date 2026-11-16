@@ -22,26 +22,21 @@ class RankingFacade(
         }
         val monday = (periodStart ?: LocalDate.now()).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
-        val inputFrozenAt = productRankingService.findFirstWrittenAt(monday)
-            ?: return WeeklyRankingInfo.notPublished(monday)
+        val pointer = productRankingService.findPointer(monday) ?: return WeeklyRankingInfo.notPublished(monday)
 
-        val firstPage = productRankingService.getPage(monday, 0, size)
-        return WeeklyRankingInfo.published(
+        return WeeklyRankingInfo.of(
+            status = if (pointer.isPublished) WeeklyRankingStatus.PUBLISHED else WeeklyRankingStatus.IN_PROGRESS,
             periodStart = monday,
-            snapshotId = firstPage.first().snapshotId,
-            inputFrozenAt = inputFrozenAt,
-            items = rankingsOfExistingProducts(monday, firstPage, size).map { WeeklyRankingInfo.Item.from(it) },
+            snapshotId = pointer.snapshotId,
+            inputFrozenAt = productRankingService.findFirstWrittenAt(monday),
+            items = rankingsOfExistingProducts(monday, size).map { WeeklyRankingInfo.Item.from(it) },
         )
     }
 
-    private fun rankingsOfExistingProducts(
-        monday: LocalDate,
-        firstPage: List<ProductRanking>,
-        size: Int,
-    ): List<ProductRanking> {
+    private fun rankingsOfExistingProducts(monday: LocalDate, size: Int): List<ProductRanking> {
         val collected = mutableListOf<ProductRanking>()
         var page = 0
-        var rows = firstPage
+        var rows = productRankingService.getPage(monday, page, size)
         while (rows.isNotEmpty() && collected.size < size) {
             val existing = productService.getAllByIds(rows.map { it.productId }).map { it.id }.toSet()
             collected += rows.filter { it.productId in existing }

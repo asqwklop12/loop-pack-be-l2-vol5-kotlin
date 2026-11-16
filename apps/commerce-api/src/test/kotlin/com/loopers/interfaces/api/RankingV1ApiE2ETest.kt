@@ -5,10 +5,13 @@ import com.loopers.domain.brand.Brand
 import com.loopers.domain.product.Product
 import com.loopers.domain.product.Stock
 import com.loopers.domain.ranking.ProductRanking
+import com.loopers.domain.ranking.ProductRankingPointer
+import com.loopers.domain.ranking.ProductRankingPointerStatus
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandJpaRepository
 import com.loopers.infrastructure.product.ProductJpaRepository
 import com.loopers.infrastructure.ranking.ProductRankingJpaRepository
+import com.loopers.infrastructure.ranking.ProductRankingPointerJpaRepository
 import com.loopers.interfaces.api.ranking.RankingV1Dto
 import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
@@ -18,6 +21,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertAll
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import org.junit.jupiter.params.provider.ValueSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -33,6 +37,7 @@ import java.time.LocalDate
 class RankingV1ApiE2ETest @Autowired constructor(
     private val testRestTemplate: TestRestTemplate,
     private val productRankingJpaRepository: ProductRankingJpaRepository,
+    private val productRankingPointerJpaRepository: ProductRankingPointerJpaRepository,
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
@@ -59,6 +64,10 @@ class RankingV1ApiE2ETest @Autowired constructor(
         )
     }
 
+    private fun point(status: ProductRankingPointerStatus, productCount: Long? = null) {
+        productRankingPointerJpaRepository.save(ProductRankingPointer("2026_11_2", status, productCount))
+    }
+
     @DisplayName("GET /api/v1/rankings/weekly")
     @Nested
     inner class GetWeekly {
@@ -69,6 +78,7 @@ class RankingV1ApiE2ETest @Autowired constructor(
             rank(a, score = 9, ranking = 1)
             rank(b, score = 3, ranking = 2)
             rank(c, score = 3, ranking = 2)
+            point(ProductRankingPointerStatus.PUBLISHED, productCount = 3)
 
             val response = get("?periodStart=2026-11-09&limit=2")
 
@@ -92,6 +102,7 @@ class RankingV1ApiE2ETest @Autowired constructor(
         fun returnsMondayRanking_whenPeriodStartIsNotMonday() {
             val (a) = savedProducts(1)
             rank(a, score = 9, ranking = 1)
+            point(ProductRankingPointerStatus.PUBLISHED, productCount = 1)
 
             val data = get("?periodStart=2026-11-12").body?.data
 
@@ -108,6 +119,7 @@ class RankingV1ApiE2ETest @Autowired constructor(
             rank(a, score = 9, ranking = 1)
             rank(b, score = 5, ranking = 2)
             rank(c, score = 1, ranking = 3)
+            point(ProductRankingPointerStatus.PUBLISHED, productCount = 3)
             productJpaRepository.save(b.apply { delete() })
 
             val data = get("?periodStart=2026-11-09&limit=2").body?.data
@@ -115,7 +127,7 @@ class RankingV1ApiE2ETest @Autowired constructor(
             assertThat(data?.items?.map { it.productId to it.ranking }).containsExactly(a.id to 1, c.id to 3)
         }
 
-        @DisplayName("공개된 랭킹이 없는 주를 주면, NOT_PUBLISHED 와 빈 목록을 반환한다.")
+        @DisplayName("포인터가 없는 주를 주면, NOT_PUBLISHED 와 빈 목록을 반환한다.")
         @Test
         fun returnsNotPublished_whenWeekHasNoRanking() {
             val data = get("?periodStart=2026-11-16").body?.data
@@ -124,6 +136,53 @@ class RankingV1ApiE2ETest @Autowired constructor(
                 { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.NOT_PUBLISHED) },
                 { assertThat(data?.periodStart).isEqualTo(LocalDate.parse("2026-11-16")) },
                 { assertThat(data?.snapshotId).isNull() },
+                { assertThat(data?.items).isEmpty() },
+            )
+        }
+
+        @DisplayName("랭킹 행이 있어도 포인터가 없으면, NOT_PUBLISHED 와 빈 목록을 반환한다.")
+        @Test
+        fun returnsNotPublished_whenPointerIsMissing() {
+            val (a) = savedProducts(1)
+            rank(a, score = 9, ranking = 1)
+
+            val data = get("?periodStart=2026-11-09").body?.data
+
+            assertAll(
+                { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.NOT_PUBLISHED) },
+                { assertThat(data?.items).isEmpty() },
+            )
+        }
+
+        @DisplayName("포인터가 IN_PROGRESS 나 FAILED 면, IN_PROGRESS 와 지금까지 쓴 랭킹을 반환한다.")
+        @ParameterizedTest
+        @EnumSource(value = ProductRankingPointerStatus::class, names = ["IN_PROGRESS", "FAILED"])
+        fun returnsInProgressWithWrittenRankings_whenNotPublished(status: ProductRankingPointerStatus) {
+            val (a, b) = savedProducts(2)
+            rank(a, score = 9, ranking = 1)
+            rank(b, score = 5, ranking = 2)
+            point(status)
+
+            val data = get("?periodStart=2026-11-09&limit=1").body?.data
+
+            assertAll(
+                { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.IN_PROGRESS) },
+                { assertThat(data?.snapshotId).isEqualTo("2026_11_2") },
+                { assertThat(data?.items?.map { it.productId }).containsExactly(a.id) },
+            )
+        }
+
+        @DisplayName("공개됐지만 랭킹 행이 없는 주면, PUBLISHED 와 빈 목록을 반환한다.")
+        @Test
+        fun returnsPublishedEmpty_whenWeekHasNoPurchase() {
+            point(ProductRankingPointerStatus.PUBLISHED, productCount = 0)
+
+            val data = get("?periodStart=2026-11-09").body?.data
+
+            assertAll(
+                { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.PUBLISHED) },
+                { assertThat(data?.snapshotId).isEqualTo("2026_11_2") },
+                { assertThat(data?.inputFrozenAt).isNull() },
                 { assertThat(data?.items).isEmpty() },
             )
         }

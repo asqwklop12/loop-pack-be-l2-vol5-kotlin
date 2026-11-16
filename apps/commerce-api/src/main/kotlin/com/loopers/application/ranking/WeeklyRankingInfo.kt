@@ -6,6 +6,7 @@ import java.time.ZonedDateTime
 
 enum class WeeklyRankingStatus {
     PUBLISHED,
+    IN_PROGRESS,
     NOT_PUBLISHED,
 }
 
@@ -39,14 +40,15 @@ data class WeeklyRankingInfo(
                 items = emptyList(),
             )
 
-        fun published(
+        fun of(
+            status: WeeklyRankingStatus,
             periodStart: LocalDate,
             snapshotId: String,
-            inputFrozenAt: ZonedDateTime,
+            inputFrozenAt: ZonedDateTime?,
             items: List<Item>,
         ): WeeklyRankingInfo =
             WeeklyRankingInfo(
-                status = WeeklyRankingStatus.PUBLISHED,
+                status = status,
                 periodStart = periodStart,
                 periodEnd = periodEndOf(periodStart),
                 snapshotId = snapshotId,
