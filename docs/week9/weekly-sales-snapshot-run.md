@@ -15,7 +15,7 @@
 ## 직접 실행
 
 ```bash
-./gradlew :apps:commerce-batch:bootRun --args='--job.name=weeklySalesSnapshotJob requestDate=2026-11-16,java.time.LocalDate snapshotId=2026_11_2_r1'
+./gradlew :apps:commerce-batch:bootRun --args='--job.name=weeklySalesSnapshotJob requestDate=2026-11-16,java.time.LocalDate,false snapshotId=2026_11_2_r1'
 ```
 
 - `requestDate` 의 직전 주(월~일)를 집계한다.

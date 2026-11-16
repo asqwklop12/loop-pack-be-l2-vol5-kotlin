@@ -6,16 +6,22 @@
 
 ```
 weeklySalesSnapshotJob
+ beforeJob                   포인터를 IN_PROGRESS 로 남긴다 (PUBLISHED 면 그대로)
  1. weeklySalesSnapshotStep  tasklet 으로 직전 주 스냅샷을 만든다
- 2. weeklyRankingDecider     그 주 랭킹이 이미 있으면 잡을 끝낸다
+ 2. weeklyRankingDecider     그 주 랭킹이 이미 있으면 랭킹 스텝을 건너뛴다
  3. weeklySalesRankingStep   스냅샷을 읽어 랭킹을 쓴다 (리더 → 라이터, 청크 100, 프로세서 없음)
+ 4. weeklyRankingPublishStep 스냅샷과 랭킹의 상품 수를 비교하고, 같으면 포인터를 PUBLISHED 로 바꾼다
+ afterJob                    잡이 COMPLETED 가 아니면 포인터를 FAILED 로 바꾼다 (PUBLISHED 면 그대로)
 ```
 
 - 랭킹 스텝은 새 잡을 만들지 않고 기존 `weeklySalesSnapshotJob` 의 스냅샷 스텝 뒤에 붙인다.
 - 스케줄러가 UTC 월요일 00:00 (KST 월요일 09:00) 마다 잡을 실행한다. 실행 방법은 `weekly-sales-snapshot-run.md` 에 있다.
 - 잡 파라미터는 두 개다. `requestDate` 는 스냅샷 스텝이 직전 주를 계산하는 데 쓰고, `snapshotId` 는 리더와 decider 가 그대로 쓴다. 두 값이 같은 주를 가리키는지는 잡이 검사하지 않는다.
+- `requestDate` 는 identifying 파라미터가 아니다. 같은 주는 항상 같은 JobInstance 라서, 실패한 주를 다시 실행하면 이어서 하고, 성공한 주를 다시 실행하면 Spring Batch 가 막는다.
 
 ![랭킹 배치 잡 흐름](images/ranking-batch-job-flow.png)
+
+그림은 공개 스텝과 포인터 리스너를 넣기 전의 흐름이다.
 
 ## 스냅샷
 
@@ -35,6 +41,15 @@ weeklySalesSnapshotJob
 - 시작일은 항상 월요일이다.
 - 점수는 1 이상이다.
 - 랭킹은 1 등부터 시작한다.
+
+## 포인터 테이블
+
+- 테이블 정의는 `product-ranking-pointer-table.md` 에 있다.
+- 엔티티는 commerce-api 가 가진다.
+- 한 주에 포인터는 하나다. `snapshot_id` 는 랭킹과 같은 형식이고 리비전을 붙이지 않는다.
+- 상태는 `IN_PROGRESS`, `FAILED`, `PUBLISHED` 이고, `PUBLISHED` 는 한 번 되면 되돌아가지 않는다.
+- `product_count` 는 공개 확인을 통과한 `product_ranking` 행 수다. 실패하면 비워 두고, 구매 0 건인 주는 0 으로 공개한다.
+- 상태 전이, 공개 tasklet, API 응답 정책, 예외 경우, 테스트 시나리오는 `ranking-publication-plan.md` 에 있다.
 
 ## 리더
 
