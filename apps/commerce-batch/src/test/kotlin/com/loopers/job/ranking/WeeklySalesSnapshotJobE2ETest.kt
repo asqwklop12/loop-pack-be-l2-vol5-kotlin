@@ -8,9 +8,11 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.springframework.batch.core.ExitStatus
 import org.springframework.batch.core.Job
 import org.springframework.batch.core.JobParametersBuilder
+import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException
 import org.springframework.batch.test.JobLauncherTestUtils
 import org.springframework.batch.test.JobRepositoryTestUtils
 import org.springframework.batch.test.context.SpringBatchTest
@@ -39,12 +41,14 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         jobLauncherTestUtils.job = job
         jdbcTemplate.execute(CREATE_PURCHASE_ACTIVITY)
         jdbcTemplate.execute(CREATE_PRODUCT_RANKING)
+        jdbcTemplate.execute(CREATE_PRODUCT_RANKING_POINTER)
     }
 
     @AfterEach
     fun tearDown() {
         jdbcTemplate.execute("TRUNCATE TABLE product_purchase_activity")
-        jdbcTemplate.execute("TRUNCATE TABLE product_ranking")
+        jdbcTemplate.execute("DROP TABLE product_ranking")
+        jdbcTemplate.execute("TRUNCATE TABLE product_ranking_pointer")
         databaseCleanUp.truncateAllTables()
         jobRepositoryTestUtils.removeJobExecutions()
     }
@@ -77,16 +81,14 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(snapshotRows().map { it.productId to it.salesQuantity }).containsExactly(2L to 1L)
     }
 
-    @DisplayName("같은 주의 스냅샷이 이미 있으면, 다시 실행해도 그대로 둔다.")
+    @DisplayName("성공한 주를 날짜만 바꿔 다시 실행하면, 같은 JobInstance 라 실행되지 않고 스냅샷을 그대로 둔다.")
     @Test
-    fun keepsExistingSnapshot_whenWeekAlreadySnapshotted() {
+    fun rejectsRerun_whenWeekAlreadyCompleted() {
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
         launch("2026-11-16")
         purchase(productId = 1L, quantity = 9, confirmedAt = "2026-11-11T00:00:00")
 
-        val exitStatus = launch("2026-11-18")
-
-        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThrows<JobInstanceAlreadyCompleteException> { launch("2026-11-18") }
         assertThat(snapshotRows().map { it.productId to it.salesQuantity }).containsExactly(1L to 2L)
     }
 
@@ -144,15 +146,121 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(rankingRows().map { it.productId }).containsExactly(99L)
     }
 
-    private fun launch(requestDate: String): ExitStatus {
+    @DisplayName("랭킹을 다 쓰고 상품 수가 스냅샷과 같으면, 포인터를 PUBLISHED 와 상품 수로 남긴다.")
+    @Test
+    fun publishesPointer_whenRankingIsComplete() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 2L, quantity = 9, confirmedAt = "2026-11-11T00:00:00")
+
+        launch("2026-11-16")
+
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 2L))
+    }
+
+    @DisplayName("랭킹 스텝이 실패하면, 포인터를 FAILED 로 남기고 상품 수는 비워 둔다.")
+    @Test
+    fun marksPointerFailed_whenRankingStepFails() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        jdbcTemplate.execute("ALTER TABLE product_ranking ADD COLUMN must_fill int NOT NULL")
+
+        val exitStatus = launch("2026-11-16")
+
+        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "FAILED", null))
+    }
+
+    @DisplayName("실패한 주를 날짜만 바꿔 다시 실행하면, 같은 JobInstance 로 이어서 랭킹을 쓰고 PUBLISHED 로 남긴다.")
+    @Test
+    fun resumesSameInstanceAndPublishes_whenFailedWeekIsRerun() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 2L, quantity = 9, confirmedAt = "2026-11-11T00:00:00")
+        jdbcTemplate.execute("ALTER TABLE product_ranking ADD COLUMN must_fill int NOT NULL")
+        val failed = launchForInstance("2026-11-16")
+        jdbcTemplate.execute("ALTER TABLE product_ranking DROP COLUMN must_fill")
+
+        val resumed = launchForInstance("2026-11-17")
+
+        assertThat(resumed.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(resumed.instanceId).isEqualTo(failed.instanceId)
+        assertThat(rankingRows().map { it.productId }).containsExactly(2L, 1L)
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 2L))
+    }
+
+    @DisplayName("이미 PUBLISHED 인 주를 다시 실행해도, 포인터의 상태와 상품 수를 그대로 둔다.")
+    @Test
+    fun keepsPublishedPointer_whenPublishedWeekIsRerun() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        jdbcTemplate.update(
+            """
+            INSERT INTO product_ranking_pointer (snapshot_id, status, product_count, created_at, updated_at)
+            VALUES ('2026_11_2', 'PUBLISHED', 5, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            """.trimIndent(),
+        )
+
+        launch("2026-11-16")
+
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 5L))
+    }
+
+    @DisplayName("구매가 없는 주는, 포인터를 PUBLISHED 와 상품 수 0 으로 남긴다.")
+    @Test
+    fun publishesPointerWithZero_whenNoPurchaseInWeek() {
+        launch("2026-11-16")
+
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 0L))
+    }
+
+    @DisplayName("스냅샷과 랭킹의 상품 수가 다르면, 공개하지 않고 포인터를 FAILED 로 남긴다.")
+    @Test
+    fun marksPointerFailed_whenCountsDiffer() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 2L, quantity = 9, confirmedAt = "2026-11-11T00:00:00")
+        jdbcTemplate.update(
+            """
+            INSERT INTO product_ranking
+                (snapshot_id, period_start, product_id, score, ranking, created_at, updated_at)
+            VALUES ('2026_11_2', '2026-11-09', 99, 1, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            """.trimIndent(),
+        )
+
+        val exitStatus = launch("2026-11-16")
+
+        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "FAILED", null))
+    }
+
+    private fun launch(requestDate: String): ExitStatus = launchForInstance(requestDate).exitStatus
+
+    private fun launchForInstance(requestDate: String): Launched {
         val date = LocalDate.parse(requestDate)
-        return jobLauncherTestUtils.launchJob(
+        val execution = jobLauncherTestUtils.launchJob(
             JobParametersBuilder()
-                .addLocalDate("requestDate", date)
+                .addLocalDate("requestDate", date, false)
                 .addString("snapshotId", SnapshotWeek.endedBefore(date).snapshotId)
                 .toJobParameters(),
-        ).exitStatus
+        )
+        return Launched(execution.exitStatus, execution.jobInstance.instanceId)
     }
+
+    private data class Launched(
+        val exitStatus: ExitStatus,
+        val instanceId: Long,
+    )
+
+    private fun pointerRows(): List<PointerRow> =
+        jdbcTemplate.query("SELECT snapshot_id, status, product_count FROM product_ranking_pointer") { rs, _ ->
+            PointerRow(
+                snapshotId = rs.getString("snapshot_id"),
+                status = rs.getString("status"),
+                productCount = rs.getLong("product_count").takeUnless { rs.wasNull() },
+            )
+        }
+
+    private data class PointerRow(
+        val snapshotId: String,
+        val status: String,
+        val productCount: Long?,
+    )
 
     private fun rankingRows(): List<RankingRow> =
         jdbcTemplate.query(
@@ -244,6 +352,20 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
                 ranking int NOT NULL,
                 PRIMARY KEY (id),
                 UNIQUE KEY uk_product_ranking_snapshot_product (snapshot_id, product_id)
+            )
+        """.trimIndent()
+
+        private val CREATE_PRODUCT_RANKING_POINTER = """
+            CREATE TABLE IF NOT EXISTS product_ranking_pointer (
+                id bigint NOT NULL AUTO_INCREMENT,
+                created_at datetime(6) NOT NULL,
+                deleted_at datetime(6) DEFAULT NULL,
+                updated_at datetime(6) NOT NULL,
+                snapshot_id varchar(30) NOT NULL,
+                status varchar(20) NOT NULL,
+                product_count bigint DEFAULT NULL,
+                PRIMARY KEY (id),
+                UNIQUE KEY uk_product_ranking_pointer_snapshot (snapshot_id)
             )
         """.trimIndent()
     }

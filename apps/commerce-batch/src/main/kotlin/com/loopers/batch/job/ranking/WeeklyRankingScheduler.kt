@@ -28,7 +28,7 @@ class WeeklyRankingScheduler(
         jobLauncher.run(
             job,
             JobParametersBuilder()
-                .addLocalDate("requestDate", requestDate)
+                .addLocalDate("requestDate", requestDate, false)
                 .addString("snapshotId", SnapshotWeek.endedBefore(requestDate).snapshotId)
                 .toJobParameters(),
         )

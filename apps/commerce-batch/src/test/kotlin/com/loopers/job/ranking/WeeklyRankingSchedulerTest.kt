@@ -72,12 +72,28 @@ class WeeklyRankingSchedulerTest @Autowired constructor(
             )
             """.trimIndent(),
         )
+        jdbcTemplate.execute(
+            """
+            CREATE TABLE IF NOT EXISTS product_ranking_pointer (
+                id bigint NOT NULL AUTO_INCREMENT,
+                created_at datetime(6) NOT NULL,
+                deleted_at datetime(6) DEFAULT NULL,
+                updated_at datetime(6) NOT NULL,
+                snapshot_id varchar(30) NOT NULL,
+                status varchar(20) NOT NULL,
+                product_count bigint DEFAULT NULL,
+                PRIMARY KEY (id),
+                UNIQUE KEY uk_product_ranking_pointer_snapshot (snapshot_id)
+            )
+            """.trimIndent(),
+        )
     }
 
     @AfterEach
     fun tearDown() {
         jdbcTemplate.execute("TRUNCATE TABLE product_purchase_activity")
         jdbcTemplate.execute("TRUNCATE TABLE product_ranking")
+        jdbcTemplate.execute("TRUNCATE TABLE product_ranking_pointer")
         databaseCleanUp.truncateAllTables()
         jobRepositoryTestUtils.removeJobExecutions()
     }
