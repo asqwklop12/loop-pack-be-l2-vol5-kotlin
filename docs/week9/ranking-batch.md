@@ -12,7 +12,10 @@ weeklySalesSnapshotJob
 ```
 
 - 랭킹 스텝은 새 잡을 만들지 않고 기존 `weeklySalesSnapshotJob` 의 스냅샷 스텝 뒤에 붙인다.
+- 스케줄러가 UTC 월요일 00:00 (KST 월요일 09:00) 마다 잡을 실행한다. 실행 방법은 `weekly-sales-snapshot-run.md` 에 있다.
 - 잡 파라미터는 두 개다. `requestDate` 는 스냅샷 스텝이 직전 주를 계산하는 데 쓰고, `snapshotId` 는 리더와 decider 가 그대로 쓴다. 두 값이 같은 주를 가리키는지는 잡이 검사하지 않는다.
+
+![랭킹 배치 잡 흐름](images/ranking-batch-job-flow.png)
 
 ## 스냅샷
 
