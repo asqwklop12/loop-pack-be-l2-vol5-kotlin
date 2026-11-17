@@ -83,6 +83,30 @@ class WeeklySalesReaderTest @Autowired constructor(
         )
     }
 
+    @DisplayName("그 주 r2 가 있으면, r1 과 r2 를 상품별로 더해 순위를 매긴다.")
+    @Test
+    fun sumsFirstAndSecondRevisionPerProduct_whenSecondExists() {
+        snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 20L)
+        snapshot("2026_11_2_r1", productId = 2L, salesQuantity = 22L)
+        snapshot("2026_11_2_r2", productId = 1L, salesQuantity = 5L)
+        snapshot("2026_11_2_r2", productId = 3L, salesQuantity = 30L)
+
+        assertThat(readAll("2026_11_2_r1")).containsExactly(
+            sales(productId = 3L, salesQuantity = 30L, ranking = 1),
+            sales(productId = 1L, salesQuantity = 25L, ranking = 2),
+            sales(productId = 2L, salesQuantity = 22L, ranking = 3),
+        )
+    }
+
+    @DisplayName("다른 주에 r2 가 있어도, 지정한 주의 r1 을 읽는다.")
+    @Test
+    fun readsFirstRevision_whenOnlyOtherWeekHasSecond() {
+        snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 20L)
+        snapshot("2026_11_1_r2", productId = 2L, salesQuantity = 30L)
+
+        assertThat(readAll("2026_11_2_r1")).containsExactly(sales(productId = 1L, salesQuantity = 20L, ranking = 1))
+    }
+
     @DisplayName("지정한 주의 스냅샷이 없으면, 아무것도 읽지 않는다.")
     @Test
     fun readsNothing_whenSnapshotIsMissing() {

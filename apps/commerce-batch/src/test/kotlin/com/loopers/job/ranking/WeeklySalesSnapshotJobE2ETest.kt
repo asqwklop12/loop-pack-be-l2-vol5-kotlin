@@ -23,6 +23,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 @SpringBootTest
 @SpringBatchTest
@@ -78,7 +79,7 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
 
         launch("2026-11-16")
 
-        assertThat(snapshotRows().map { it.productId to it.salesQuantity }).containsExactly(2L to 1L)
+        assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(2L to 1L)
     }
 
     @DisplayName("성공한 주를 날짜만 바꿔 다시 실행하면, 같은 JobInstance 라 실행되지 않고 스냅샷을 그대로 둔다.")
@@ -229,6 +230,78 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "FAILED", null))
     }
 
+    @DisplayName("직전 주 r1 을 만들 때, 그 전 주에 r1 을 만든 뒤 생긴 구매만 상품별로 합쳐 r2 로 함께 남긴다.")
+    @Test
+    fun writesLateSnapshotOfWeekBefore_withOnlyPurchasesCreatedAfterFirst() {
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
+        launch("2026-11-16")
+        val afterFirst = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-12T00:00:00", createdAt = afterFirst)
+        purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-15T23:00:00", createdAt = afterFirst)
+        purchase(productId = 3L, quantity = 9, confirmedAt = "2026-11-16T00:00:00", createdAt = afterFirst)
+
+        val exitStatus = launch("2026-11-23")
+
+        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(quantitiesOf("2026_11_2_r2")).containsExactlyInAnyOrder(1L to 3L, 2L to 4L)
+        assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 2L)
+        assertThat(quantitiesOf("2026_11_3_r1")).containsExactly(3L to 9L)
+    }
+
+    @DisplayName("그 전 주에 r1 을 만든 뒤 생긴 구매가 없으면, r2 를 만들지 않는다.")
+    @Test
+    fun writesNoLateSnapshot_whenNoPurchaseCreatedAfterFirst() {
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
+        launch("2026-11-16")
+
+        launch("2026-11-23")
+
+        assertThat(quantitiesOf("2026_11_2_r2")).isEmpty()
+    }
+
+    @DisplayName("그 전 주 r1 이 없으면, 그 주 구매를 전부 r2 로 남긴다.")
+    @Test
+    fun writesWholeWeekAsLate_whenFirstSnapshotIsMissing() {
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-12T00:00:00")
+
+        launch("2026-11-23")
+
+        assertThat(quantitiesOf("2026_11_2_r1")).isEmpty()
+        assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(1L to 5L)
+    }
+
+    @DisplayName("그 주 r2 가 있으면, r1 과 r2 를 더해 랭킹을 쓰고 합친 상품 수와 비교해 PUBLISHED 로 남긴다.")
+    @Test
+    fun ranksAndPublishesWithFirstPlusSecond_whenSecondExists() {
+        snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 2L)
+        snapshot("2026_11_2_r2", productId = 1L, salesQuantity = 3L)
+        snapshot("2026_11_2_r2", productId = 2L, salesQuantity = 4L)
+
+        val exitStatus = launch("2026-11-16")
+
+        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(rankingRows().map { Triple(it.productId, it.score, it.ranking) })
+            .containsExactly(Triple(1L, 5L, 1), Triple(2L, 4L, 2))
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 2L))
+    }
+
+    private fun snapshot(snapshotId: String, productId: Long, salesQuantity: Long) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO product_sales_snapshot
+                (snapshot_id, period_start, period_end, product_id, sales_quantity, created_at, updated_at)
+            VALUES (?, '2026-11-09 00:00:00', '2026-11-16 00:00:00', ?, ?, '2026-11-16 01:30:00', '2026-11-16 01:30:00')
+            """.trimIndent(),
+            snapshotId,
+            productId,
+            salesQuantity,
+        )
+    }
+
+    private fun quantitiesOf(snapshotId: String): List<Pair<Long, Long>> =
+        snapshotRows().filter { it.snapshotId == snapshotId }.map { it.productId to it.salesQuantity }
+
     private fun launch(requestDate: String): ExitStatus = launchForInstance(requestDate).exitStatus
 
     private fun launchForInstance(requestDate: String): Launched {
@@ -283,16 +356,17 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         val ranking: Int,
     )
 
-    private fun purchase(productId: Long, quantity: Int, confirmedAt: String) {
+    private fun purchase(productId: Long, quantity: Int, confirmedAt: String, createdAt: LocalDateTime? = null) {
         val at = LocalDateTime.parse(confirmedAt)
+        val created = createdAt ?: at
         jdbcTemplate.update(
             """
             INSERT INTO product_purchase_activity
                 (created_at, updated_at, order_id, product_id, quantity, user_id, confirmed_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
-            at,
-            at,
+            created,
+            created,
             nextOrderId++,
             productId,
             quantity,

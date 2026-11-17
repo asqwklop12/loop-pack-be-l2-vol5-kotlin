@@ -53,6 +53,12 @@ class SnapshotWeekTest {
         assertThat(week.endUtc).isEqualTo(LocalDateTime.parse("2027-01-04T00:00:00"))
     }
 
+    @DisplayName("늦은 구매 스냅샷 식별자는 같은 주에 리비전 r2 를 붙인다.")
+    @Test
+    fun namesLateSnapshotWithSecondRevision() {
+        assertThat(SnapshotWeek(LocalDate.parse("2026-11-09")).lateSnapshotId).isEqualTo("2026_11_2_r2")
+    }
+
     @DisplayName("월요일이 아닌 날로 주를 만들면, IllegalArgumentException 이 발생한다.")
     @Test
     fun throwsIllegalArgumentException_whenStartIsNotMonday() {

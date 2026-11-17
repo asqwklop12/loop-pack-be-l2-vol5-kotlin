@@ -16,10 +16,16 @@ data class SnapshotWeek(
 
     val endUtc: LocalDateTime get() = monday.plusWeeks(1).atStartOfDay()
 
-    val snapshotId: String
-        get() = "%04d_%02d_%d_r1".format(monday.year, monday.monthValue, (monday.dayOfMonth - 1) / 7 + 1)
+    val snapshotId: String get() = snapshotIdOf(1)
+
+    val lateSnapshotId: String get() = snapshotIdOf(LATE_REVISION)
+
+    private fun snapshotIdOf(revision: Int): String =
+        "%04d_%02d_%d_r%d".format(monday.year, monday.monthValue, (monday.dayOfMonth - 1) / 7 + 1, revision)
 
     companion object {
+        private const val LATE_REVISION = 2
+
         fun endedBefore(requestDate: LocalDate): SnapshotWeek =
             SnapshotWeek(requestDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).minusWeeks(1))
     }

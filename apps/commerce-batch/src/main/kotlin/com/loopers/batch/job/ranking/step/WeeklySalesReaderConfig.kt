@@ -22,7 +22,7 @@ class WeeklySalesReaderConfig(
             .name(READER_NAME)
             .dataSource(dataSource)
             .sql(SELECT_WEEKLY_SALES)
-            .queryArguments(snapshotId)
+            .queryArguments(snapshotId, lateSnapshotIdOf(snapshotId))
             .rowMapper { rs, _ ->
                 ProductSales(
                     snapshotId = rs.getString("snapshot_id"),
@@ -37,14 +37,17 @@ class WeeklySalesReaderConfig(
     companion object {
         const val READER_NAME = "weeklySalesReader"
 
+        private fun lateSnapshotIdOf(snapshotId: String): String = "${snapshotId.substringBefore("_r")}_r2"
+
         private val SELECT_WEEKLY_SALES = """
-            SELECT SUBSTRING_INDEX(snapshot_id, '_r', 1) AS snapshot_id,
-                   DATE(period_start) AS period_start,
+            SELECT SUBSTRING_INDEX(MIN(snapshot_id), '_r', 1) AS snapshot_id,
+                   DATE(MIN(period_start)) AS period_start,
                    product_id,
-                   sales_quantity,
-                   DENSE_RANK() OVER (ORDER BY sales_quantity DESC) AS ranking
+                   SUM(sales_quantity) AS sales_quantity,
+                   DENSE_RANK() OVER (ORDER BY SUM(sales_quantity) DESC) AS ranking
             FROM product_sales_snapshot
-            WHERE snapshot_id = ?
+            WHERE snapshot_id IN (?, ?)
+            GROUP BY product_id
             ORDER BY sales_quantity DESC, product_id
         """.trimIndent()
     }

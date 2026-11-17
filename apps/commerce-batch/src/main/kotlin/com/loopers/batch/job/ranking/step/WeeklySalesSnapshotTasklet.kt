@@ -23,13 +23,45 @@ class WeeklySalesSnapshotTasklet(
     private val jdbcTemplate: JdbcTemplate,
 ) : Tasklet {
     override fun execute(contribution: StepContribution, chunkContext: ChunkContext): RepeatStatus {
-        val week = SnapshotWeek.endedBefore(requestDate)
-        if (snapshotExists(week.snapshotId)) return RepeatStatus.FINISHED
+        val written = writeFirst(SnapshotWeek.endedBefore(requestDate)) +
+            writeLate(SnapshotWeek.endedBefore(requestDate.minusWeeks(1)))
+        contribution.incrementWriteCount(written.toLong())
+        return RepeatStatus.FINISHED
+    }
 
-        val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
-        val written = jdbcTemplate.update(
-            INSERT_WEEKLY_SALES,
+    private fun writeFirst(week: SnapshotWeek): Int {
+        if (snapshotExists(week.snapshotId)) return 0
+        return writeWholeWeek(week, week.snapshotId)
+    }
+
+    private fun writeLate(week: SnapshotWeek): Int {
+        if (snapshotExists(week.lateSnapshotId)) return 0
+
+        val firstSnapshotAt = jdbcTemplate.queryForObject(
+            "SELECT MAX(created_at) FROM product_sales_snapshot WHERE snapshot_id = ?",
+            LocalDateTime::class.java,
             week.snapshotId,
+        )
+        val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
+        return jdbcTemplate.update(
+            INSERT_LATE_WEEKLY_SALES,
+            week.lateSnapshotId,
+            week.startUtc,
+            week.endUtc,
+            nowUtc,
+            nowUtc,
+            week.startUtc,
+            week.endUtc,
+            firstSnapshotAt,
+            firstSnapshotAt,
+        )
+    }
+
+    private fun writeWholeWeek(week: SnapshotWeek, snapshotId: String): Int {
+        val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
+        return jdbcTemplate.update(
+            INSERT_WEEKLY_SALES,
+            snapshotId,
             week.startUtc,
             week.endUtc,
             nowUtc,
@@ -37,8 +69,6 @@ class WeeklySalesSnapshotTasklet(
             week.startUtc,
             week.endUtc,
         )
-        contribution.incrementWriteCount(written.toLong())
-        return RepeatStatus.FINISHED
     }
 
     private fun snapshotExists(snapshotId: String): Boolean =
@@ -54,6 +84,16 @@ class WeeklySalesSnapshotTasklet(
             SELECT ?, ?, ?, product_id, SUM(quantity), ?, ?
             FROM product_purchase_activity
             WHERE confirmed_at >= ? AND confirmed_at < ? AND deleted_at IS NULL
+            GROUP BY product_id
+        """.trimIndent()
+
+        private val INSERT_LATE_WEEKLY_SALES = """
+            INSERT INTO product_sales_snapshot
+                (snapshot_id, period_start, period_end, product_id, sales_quantity, created_at, updated_at)
+            SELECT ?, ?, ?, product_id, SUM(quantity), ?, ?
+            FROM product_purchase_activity
+            WHERE confirmed_at >= ? AND confirmed_at < ? AND deleted_at IS NULL
+              AND (? IS NULL OR created_at > ?)
             GROUP BY product_id
         """.trimIndent()
     }

@@ -20,7 +20,12 @@ class WeeklyRankingPublishTasklet(
 ) : Tasklet {
     override fun execute(contribution: StepContribution, chunkContext: ChunkContext): RepeatStatus {
         val rankingSnapshotId = snapshotId.substringBefore("_r")
-        val snapshotCount = count(COUNT_SNAPSHOT, snapshotId)
+        val snapshotCount = jdbcTemplate.queryForObject(
+            COUNT_SNAPSHOT_PRODUCTS,
+            Long::class.java,
+            snapshotId,
+            "${rankingSnapshotId}_r2",
+        ) ?: 0L
         val rankingCount = count(COUNT_RANKING, rankingSnapshotId)
         check(snapshotCount == rankingCount) {
             "스냅샷과 랭킹의 상품 수가 다릅니다. [스냅샷 = $snapshotId, 스냅샷 상품 수 = $snapshotCount, 랭킹 상품 수 = $rankingCount]"
@@ -33,7 +38,8 @@ class WeeklyRankingPublishTasklet(
         jdbcTemplate.queryForObject(sql, Long::class.java, snapshotId) ?: 0L
 
     companion object {
-        private const val COUNT_SNAPSHOT = "SELECT COUNT(*) FROM product_sales_snapshot WHERE snapshot_id = ?"
+        private const val COUNT_SNAPSHOT_PRODUCTS =
+            "SELECT COUNT(DISTINCT product_id) FROM product_sales_snapshot WHERE snapshot_id IN (?, ?)"
         private const val COUNT_RANKING = "SELECT COUNT(*) FROM product_ranking WHERE snapshot_id = ?"
 
         private val PUBLISH = """
