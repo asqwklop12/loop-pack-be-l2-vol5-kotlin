@@ -35,7 +35,7 @@ class WeeklyRankingScheduler(
 
     companion object {
         const val ENABLED_PROPERTY = "ranking.schedule.enabled"
-        const val CRON = "0 0 0 * * MON"
+        const val CRON = "0 30 1 * * MON"
         const val ZONE = "UTC"
     }
 }

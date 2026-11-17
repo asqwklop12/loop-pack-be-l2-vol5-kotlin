@@ -98,12 +98,13 @@ class WeeklyRankingSchedulerTest @Autowired constructor(
         jobRepositoryTestUtils.removeJobExecutions()
     }
 
-    @DisplayName("다음 실행은 UTC 월요일 00:00 이다.")
+    @DisplayName("다음 실행은 UTC 월요일 01:30 이다.")
     @ParameterizedTest
     @CsvSource(
-        "2026-11-15T23:59:59Z, 2026-11-16T00:00Z",
-        "2026-11-16T00:00:00Z, 2026-11-23T00:00Z",
-        "2026-11-18T12:00:00Z, 2026-11-23T00:00Z",
+        "2026-11-15T23:59:59Z, 2026-11-16T01:30Z",
+        "2026-11-16T01:29:59Z, 2026-11-16T01:30Z",
+        "2026-11-16T01:30:00Z, 2026-11-23T01:30Z",
+        "2026-11-18T12:00:00Z, 2026-11-23T01:30Z",
     )
     fun nextRunIsMondayMidnightUtc(now: String, expected: String) {
         val next = CronExpression.parse(WeeklyRankingScheduler.CRON)
