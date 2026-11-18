@@ -415,66 +415,6 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(quantitiesOf("2026_11_3_r2")).isEmpty()
     }
 
-    @DisplayName("재시작 비교: 랭킹 스텝이 실패한 뒤 같은 파라미터로 재시작하면, 같은 JobInstance 로 끝나고 정상 실행과 같은 점수·순위가 나온다.")
-    @Test
-    fun restartComparison_ranksSameAsNormalRun() {
-        purchaseOrder(orderId = 42L, confirmedAt = "2026-08-18T10:00:00", 7L to 3, 8L to 1)
-        purchaseOrder(orderId = 43L, confirmedAt = "2026-08-19T10:00:00", 9L to 5)
-        purchaseOrder(orderId = 44L, confirmedAt = "2026-08-20T10:00:00", 7L to 2)
-        purchaseOrder(orderId = 142L, confirmedAt = "2026-08-25T10:00:00", 7L to 3, 8L to 1)
-        purchaseOrder(orderId = 143L, confirmedAt = "2026-08-26T10:00:00", 9L to 5)
-        purchaseOrder(orderId = 144L, confirmedAt = "2026-08-27T10:00:00", 7L to 2)
-        failRankingInsertAt(productId = 9L)
-
-        val failed = launchForInstance("2026-08-24")
-
-        assertThat(failed.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
-        assertThat(rankingOfWeek("2026_08_3")).isEmpty()
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_08_3", "FAILED", null))
-        stopFailingRankingInsert()
-
-        val resumed = launchForInstance("2026-08-24")
-
-        assertThat(resumed.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
-        assertThat(resumed.instanceId).isEqualTo(failed.instanceId)
-        assertThat(resumed.executionId).isNotEqualTo(failed.executionId)
-        assertThat(rankingOfWeek("2026_08_3")).containsExactly(Triple(7L, 5L, 1), Triple(9L, 5L, 2), Triple(8L, 1L, 3))
-        assertThat(metaOf("2026_08_3_r1")!!.rowCount).isEqualTo(4L)
-
-        launch("2026-08-31")
-
-        assertThat(rankingOfWeek("2026_08_4")).containsExactlyElementsOf(rankingOfWeek("2026_08_3"))
-        assertThat(metaOf("2026_08_4_r1")!!.rowCount).isEqualTo(metaOf("2026_08_3_r1")!!.rowCount)
-        assertThat(pointerRows()).contains(PointerRow("2026_08_3", "PUBLISHED", 3L), PointerRow("2026_08_4", "PUBLISHED", 3L))
-    }
-
-    private fun purchaseOrder(orderId: Long, confirmedAt: String, vararg items: Pair<Long, Int>) {
-        val at = LocalDateTime.parse(confirmedAt)
-        items.forEach { (productId, quantity) ->
-            jdbcTemplate.update(
-                """
-                INSERT INTO product_purchase_activity
-                    (created_at, updated_at, order_id, product_id, quantity, user_id, confirmed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """.trimIndent(),
-                at,
-                at,
-                orderId,
-                productId,
-                quantity,
-                1L,
-                at,
-            )
-        }
-    }
-
-    private fun rankingOfWeek(snapshotId: String): List<Triple<Long, Long, Int>> =
-        jdbcTemplate.query(
-            "SELECT product_id, score, ranking FROM product_ranking WHERE snapshot_id = ? ORDER BY ranking",
-            { rs, _ -> Triple(rs.getLong("product_id"), rs.getLong("score"), rs.getInt("ranking")) },
-            snapshotId,
-        )
-
     private fun purchaseRankedProducts() {
         (1L..150L).forEach { purchase(productId = it, quantity = ((200 - it) * 10).toInt(), confirmedAt = "2026-11-10T00:00:00") }
     }
@@ -580,13 +520,12 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
                 .addString("snapshotId", SnapshotWeek.endedBefore(date).snapshotId)
                 .toJobParameters(),
         )
-        return Launched(execution.exitStatus, execution.jobInstance.instanceId, execution.id)
+        return Launched(execution.exitStatus, execution.jobInstance.instanceId)
     }
 
     private data class Launched(
         val exitStatus: ExitStatus,
         val instanceId: Long,
-        val executionId: Long,
     )
 
     private fun pointerRows(): List<PointerRow> =

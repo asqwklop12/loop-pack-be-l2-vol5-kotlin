@@ -17,6 +17,7 @@ import org.springframework.batch.core.step.builder.StepBuilder
 import org.springframework.batch.item.database.JdbcBatchItemWriter
 import org.springframework.batch.item.database.JdbcCursorItemReader
 import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -35,13 +36,14 @@ class WeeklySalesSnapshotJobConfig(
     private val weeklyRankingDecider: WeeklyRankingDecider,
     private val weeklyRankingPublishTasklet: WeeklyRankingPublishTasklet,
     private val weeklyRankingPointerListener: WeeklyRankingPointerListener,
+    @param:Value("\${${WeeklySalesSnapshotJobConfig.CHUNK_SIZE_PROPERTY}:100}") private val chunkSize: Int,
 ) {
     companion object {
         const val JOB_NAME = "weeklySalesSnapshotJob"
         private const val STEP_NAME = "weeklySalesSnapshotStep"
         const val RANKING_STEP_NAME = "weeklySalesRankingStep"
         private const val PUBLISH_STEP_NAME = "weeklyRankingPublishStep"
-        private const val CHUNK_SIZE = 100
+        const val CHUNK_SIZE_PROPERTY = "ranking.chunk-size"
     }
 
     @Bean(JOB_NAME)
@@ -68,7 +70,7 @@ class WeeklySalesSnapshotJobConfig(
     @Bean(RANKING_STEP_NAME)
     fun weeklySalesRankingStep(): Step =
         StepBuilder(RANKING_STEP_NAME, jobRepository)
-            .chunk<ProductSales, ProductSales>(CHUNK_SIZE, transactionManager)
+            .chunk<ProductSales, ProductSales>(chunkSize, transactionManager)
             .reader(weeklySalesReader)
             .writer(weeklyRankingWriter)
             .listener(stepMonitorListener)
