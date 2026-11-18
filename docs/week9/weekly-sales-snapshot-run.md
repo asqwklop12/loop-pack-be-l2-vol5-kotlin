@@ -38,9 +38,10 @@
 
 ```bash
 docker exec docker-mysql-1 mysql -uapplication -papplication loopers -e "
-SELECT product_id, sales_quantity
-FROM product_sales_snapshot
+SELECT product_id, SUM(quantity) AS sales_quantity
+FROM purchase_activity_snapshot
 WHERE snapshot_id = '2026_11_2_r1'
+GROUP BY product_id
 ORDER BY sales_quantity DESC, product_id
 LIMIT 10;"
 ```

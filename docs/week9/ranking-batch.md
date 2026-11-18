@@ -25,15 +25,20 @@ weeklySalesSnapshotJob
 
 ## 스냅샷
 
-- `weeklySalesSnapshotJob` 의 첫 스텝이 tasklet 으로 스냅샷을 만든다. `requestDate` 직전 주(월~일)에 확정된 구매기록을 상품별로 합쳐 `product_sales_snapshot` 에 넣는다.
+- `weeklySalesSnapshotJob` 의 첫 스텝이 tasklet 으로 스냅샷을 만든다. `requestDate` 직전 주(월~일)에 확정된 구매기록을 주문·상품 행 그대로 `purchase_activity_snapshot` 에 넣는다. 상품별로 합치지 않는 건 입력 checksum 을 사본만으로 다시 만들 수 있게 하려는 것이다.
+- 스냅샷을 만들면 한 주·한 리비전마다 정보 행 하나를 `product_sales_snapshot_meta` 에 남긴다. 기간, 리비전, 상태(`FROZEN`), 고정 시각, 건수, 입력 checksum 이다. 구매가 없는 주도 건수 0 으로 남긴다.
+- 입력 checksum 은 사본 행을 `order_id`, `product_id` 순으로 정렬해 `order_id`·`product_id`·`quantity`·`confirmed_at` 을 TAB 으로 잇고, 행마다 LF 를 붙여 (마지막 행 포함) SHA-256 hex 로 만든다. `confirmed_at` 은 UTC `yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'` 로 쓴다.
+- 같은 리비전의 정보 행이 이미 있으면 그 스냅샷은 다시 만들지 않는다.
 - 랭킹 스텝은 그 다음 스텝이고, 리더가 이 스냅샷을 읽는다.
-- 테이블 구조는 `product-sales-snapshot-table.md`, 실행 방법은 `weekly-sales-snapshot-run.md` 에 있다.
+- 테이블 구조는 `purchase-activity-snapshot-table.md`, 실행 방법은 `weekly-sales-snapshot-run.md` 에 있다.
 
 ### 늦은 구매 스냅샷 (r2)
 
-- 늦은 구매는 확정(`confirmed_at`)은 그 주 안에 됐는데, 구매 활동 행이 그 주 r1 스냅샷을 만든 뒤에 생긴 구매다. 구매 활동의 `created_at` 이 r1 스냅샷을 만든 시각보다 늦은 행이다.
+- 구매가 어느 주에 속하는지는 확정 시각(`confirmed_at`)으로 정한다. 과제 계약의 "활동의 최초 주문 confirmedAt" 과 같다. 월요일 00:00 (UTC) 뒤에 확정된 구매는 일요일에 주문했더라도 새 주 소속이다. 주문 시각은 이벤트에도 구매 활동에도 없어서 쓰지 않는다.
+- r1 을 월요일 01:30 에 만드는 건 그 주에 확정된 구매가 저장될 때까지 기다려 주는 것이다. 주 구간을 01:30 으로 옮기는 게 아니다. 월요일 00:00 에 주문하고 00:30 에 확정한 구매는 지난주가 아니다.
+- 늦은 구매는 확정(`confirmed_at`)은 그 주 안에 됐는데, 구매 활동 행이 그 주 r1 스냅샷을 만든 뒤에 생긴 구매다. 구매 활동의 `created_at` 이 r1 정보 행의 고정 시각(`frozen_at`)보다 늦은 행이다.
 - r1 은 주가 끝나고 1 시간 30 분 뒤(UTC 월요일 01:30)에 만들어서 정상 전달은 r1 에 들어간다. r2 는 그다음 주 월요일에 만들어서 늦은 구매가 들어올 시간이 일주일 있다.
-- r2 스냅샷에는 늦은 행만 상품별로 합쳐 담는다. `snapshot_id` 는 `연도_월_주차_r2` 다.
+- r2 스냅샷에는 늦은 행만 주문·상품 행 그대로 담는다. `snapshot_id` 는 `연도_월_주차_r2` 다.
 - 그 주에 늦은 행이 없으면 r2 를 만들지 않는다.
 - 그 주 r1 이 없어도 r2 는 만든다. 이때는 `confirmed_at` 이 그 주인 구매를 전부 담는다.
 - 리비전은 r2 까지만 둔다.
@@ -47,7 +52,7 @@ weeklySalesSnapshotJob
 - 테이블 정의는 `product-ranking-table.md` 에 있다.
 - 엔티티는 commerce-api 가 가진다.
 - 한 주에 팔린 상품을 전부 담는다.
-- 한 주 안에서 상품은 겹치지 않는다. 동점이면 같은 순위를 주고, 다음 순위는 건너뛰지 않는다 (1, 2, 2, 3).
+- 한 주 안에서 상품은 겹치지 않는다. 순위는 점수가 높은 순이고, 점수가 같으면 상품 id 가 작은 쪽이 앞이다 (과제의 `score DESC, productId ASC`). 동점이어도 순위는 겹치지 않는다 (1, 2, 3, 4).
 - 점수는 판매 수량이다.
 - 시작일은 시각 없이 날짜만 둔다.
 - `snapshot_id` 는 스냅샷과 같은 `연도_월_주차` 형식이고, 리비전(`_r1`)은 붙이지 않는다 (예 `2026_11_2`). 랭킹에는 리비전이 필요 없다. 늦은 구매는 지금 다루지 않고, 나중에 리비전이 생기면 합쳐서 한 주의 랭킹 하나로 만든다.
@@ -67,24 +72,25 @@ weeklySalesSnapshotJob
 ## 리더
 
 - 스냅샷은 JDBC 로 읽는다. 리더는 Spring Batch 의 `JdbcCursorItemReader` 를 쓴다.
-- 스냅샷은 구매기록을 주차·상품별로 합쳐 둔 사본이고, 한 번 쓰면 바뀌지 않는다. `ProductSalesSnapshot` 엔티티의 검증은 만들 때 지킬 규칙이라 읽을 때는 필요 없다. 그래서 JPA 를 거칠 이유가 없다.
-- 페이징(`JdbcPagingItemReader`)이 아니라 커서로 읽는다. 스냅샷은 주차마다 팔린 상품 수만큼만 행이 생겨서, 구매가 늘어도 읽을 양이 크지 않다. 연결을 오래 잡거나 여러 스레드로 나눠 읽어야 할 만큼 커지면 그때 페이징으로 바꾼다.
-- 한 번에 한 주를 읽는다. 읽을 주는 `snapshot_id` 로 고른다. 그 주 r1 과 r2 를 함께 읽어 상품별로 판매 수량을 더한다. r2 가 없으면 r1 만 읽는 것과 같다.
+- 스냅샷은 구매기록을 주문·상품 행 그대로 둔 사본이고, 한 번 쓰면 바뀌지 않는다. `PurchaseActivitySnapshot` 엔티티의 검증은 만들 때 지킬 규칙이라 읽을 때는 필요 없다. 그래서 JPA 를 거칠 이유가 없다.
+- 페이징(`JdbcPagingItemReader`)이 아니라 커서로 읽는다. 리더가 상품별로 합쳐서 내보내므로 넘기는 행은 주차마다 팔린 상품 수만큼이다. 연결을 오래 잡거나 여러 스레드로 나눠 읽어야 할 만큼 커지면 그때 페이징으로 바꾼다.
+- 한 번에 한 주를 읽는다. 읽을 주는 `snapshot_id` 로 고른다. 그 주 r1 과 r2 의 사본 행을 함께 읽어 상품별로 수량을 더한다. r2 가 없으면 r1 만 읽는 것과 같다.
 - 판매 수량이 많은 순으로 읽고, 수량이 같으면 상품 id 가 작은 순으로 읽는다.
 - 랭킹에 쓸 `snapshot_id`(리비전을 뗀 값)와 주 시작일(`period_start` 의 날짜)도 리더 쿼리에서 만든다. 그래서 프로세서는 두지 않는다.
-- 순위는 리더 쿼리에서 `DENSE_RANK()` 로 함께 정한다. 행마다 순위가 같이 나오므로 청크를 넘어 순위를 기억할 필요가 없고, 재시작해도 같은 순위가 나온다.
-- 인덱스는 새로 만들지 않는다. 기존 인덱스 `(snapshot_id, sales_quantity desc, product_id)` 에 조건·읽는 컬럼이 모두 들어 있어서 테이블 본문은 읽지 않는다. `DENSE_RANK()` 때문에 정렬(filesort)은 한 번 더 일어나지만, 한 주에 팔린 상품 수만큼이라 감당할 만하다.
+- 순위는 리더 쿼리에서 `ROW_NUMBER()` 로 함께 정한다. 정렬에 상품 id 가 들어 있어 순위와 읽는 순서가 같다. 행마다 순위가 같이 나오므로 청크를 넘어 순위를 기억할 필요가 없고, 재시작해도 같은 순위가 나온다.
+- 인덱스는 새로 만들지 않는다. unique 키 `(snapshot_id, order_id, product_id)` 의 앞부분으로 주를 고른다. 상품별로 합치고 `ROW_NUMBER()` 로 정렬하느라 정렬(filesort)이 일어나지만, 한 주 사본 행 수만큼이라 감당할 만하다.
 
 ![랭킹 배치 리더](images/ranking-batch-reader.png)
 
 ```sql
-SELECT SUBSTRING_INDEX(snapshot_id, '_r', 1) AS snapshot_id,
-       DATE(period_start) AS period_start,
+SELECT SUBSTRING_INDEX(MIN(snapshot_id), '_r', 1) AS snapshot_id,
+       DATE(MIN(period_start)) AS period_start,
        product_id,
-       sales_quantity,
-       DENSE_RANK() OVER (ORDER BY sales_quantity DESC) AS ranking
-FROM product_sales_snapshot
-WHERE snapshot_id = '2026_11_2_r1'
+       SUM(quantity) AS sales_quantity,
+       ROW_NUMBER() OVER (ORDER BY SUM(quantity) DESC, product_id) AS ranking
+FROM purchase_activity_snapshot
+WHERE snapshot_id IN ('2026_11_2_r1', '2026_11_2_r2')
+GROUP BY product_id
 ORDER BY sales_quantity DESC, product_id;
 ```
 
