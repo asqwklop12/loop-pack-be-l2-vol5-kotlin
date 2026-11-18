@@ -89,7 +89,7 @@ class BatchRestartProbeTest @Autowired constructor(
         val reader = JdbcCursorItemReaderBuilder<Long>()
             .name("purchaseProductProbe").saveState(true)
             .dataSource(dataSource)
-            .sql("SELECT product_id FROM product_sales_snapshot WHERE snapshot_id = ? ORDER BY product_id")
+            .sql("SELECT product_id FROM purchase_activity_snapshot WHERE snapshot_id = ? ORDER BY product_id")
             .preparedStatementSetter { ps -> ps.setString(1, snapshot) }
             .rowMapper { rs, _ -> rs.getLong("product_id") }
             .build()
@@ -126,15 +126,17 @@ class BatchRestartProbeTest @Autowired constructor(
         val now = LocalDateTime.of(2026, 11, 16, 0, 0)
         jdbcTemplate.update(
             """
-            INSERT INTO product_sales_snapshot
-                (snapshot_id, period_start, period_end, product_id, sales_quantity, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO purchase_activity_snapshot
+                (snapshot_id, period_start, period_end, order_id, product_id, quantity, confirmed_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
             snapshotId,
             now.minusWeeks(1),
             now,
             productId,
+            productId,
             salesQuantity,
+            now.minusDays(3),
             now,
             now,
         )

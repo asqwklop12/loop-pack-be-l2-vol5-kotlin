@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
@@ -124,8 +125,8 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(rankingRows()).containsExactly(
             RankingRow("2026_11_2", "2026-11-09", 2L, 9L, 1),
             RankingRow("2026_11_2", "2026-11-09", 1L, 3L, 2),
-            RankingRow("2026_11_2", "2026-11-09", 3L, 3L, 2),
-            RankingRow("2026_11_2", "2026-11-09", 4L, 1L, 3),
+            RankingRow("2026_11_2", "2026-11-09", 3L, 3L, 3),
+            RankingRow("2026_11_2", "2026-11-09", 4L, 1L, 4),
         )
     }
 
@@ -289,11 +290,12 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
     private fun snapshot(snapshotId: String, productId: Long, salesQuantity: Long) {
         jdbcTemplate.update(
             """
-            INSERT INTO product_sales_snapshot
-                (snapshot_id, period_start, period_end, product_id, sales_quantity, created_at, updated_at)
-            VALUES (?, '2026-11-09 00:00:00', '2026-11-16 00:00:00', ?, ?, '2026-11-16 01:30:00', '2026-11-16 01:30:00')
+            INSERT INTO purchase_activity_snapshot
+                (snapshot_id, period_start, period_end, order_id, product_id, quantity, confirmed_at, created_at, updated_at)
+            VALUES (?, '2026-11-09 00:00:00', '2026-11-16 00:00:00', ?, ?, ?, '2026-11-10 00:00:00', '2026-11-16 01:30:00', '2026-11-16 01:30:00')
             """.trimIndent(),
             snapshotId,
+            nextOrderId++,
             productId,
             salesQuantity,
         )
@@ -382,7 +384,7 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
         launch("2026-11-16")
         val firstSnapshotAt = jdbcTemplate.queryForObject(
-            "SELECT MAX(created_at) FROM product_sales_snapshot WHERE snapshot_id = '2026_11_2_r1'",
+            "SELECT frozen_at FROM product_sales_snapshot_meta WHERE snapshot_id = '2026_11_2_r1'",
             LocalDateTime::class.java,
         )!!
         purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-11T00:00:00", createdAt = firstSnapshotAt.minusSeconds(1))
@@ -413,6 +415,66 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(quantitiesOf("2026_11_3_r2")).isEmpty()
     }
 
+    @DisplayName("재시작 비교: 랭킹 스텝이 실패한 뒤 같은 파라미터로 재시작하면, 같은 JobInstance 로 끝나고 정상 실행과 같은 점수·순위가 나온다.")
+    @Test
+    fun restartComparison_ranksSameAsNormalRun() {
+        purchaseOrder(orderId = 42L, confirmedAt = "2026-08-18T10:00:00", 7L to 3, 8L to 1)
+        purchaseOrder(orderId = 43L, confirmedAt = "2026-08-19T10:00:00", 9L to 5)
+        purchaseOrder(orderId = 44L, confirmedAt = "2026-08-20T10:00:00", 7L to 2)
+        purchaseOrder(orderId = 142L, confirmedAt = "2026-08-25T10:00:00", 7L to 3, 8L to 1)
+        purchaseOrder(orderId = 143L, confirmedAt = "2026-08-26T10:00:00", 9L to 5)
+        purchaseOrder(orderId = 144L, confirmedAt = "2026-08-27T10:00:00", 7L to 2)
+        failRankingInsertAt(productId = 9L)
+
+        val failed = launchForInstance("2026-08-24")
+
+        assertThat(failed.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
+        assertThat(rankingOfWeek("2026_08_3")).isEmpty()
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_08_3", "FAILED", null))
+        stopFailingRankingInsert()
+
+        val resumed = launchForInstance("2026-08-24")
+
+        assertThat(resumed.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(resumed.instanceId).isEqualTo(failed.instanceId)
+        assertThat(resumed.executionId).isNotEqualTo(failed.executionId)
+        assertThat(rankingOfWeek("2026_08_3")).containsExactly(Triple(7L, 5L, 1), Triple(9L, 5L, 2), Triple(8L, 1L, 3))
+        assertThat(metaOf("2026_08_3_r1")!!.rowCount).isEqualTo(4L)
+
+        launch("2026-08-31")
+
+        assertThat(rankingOfWeek("2026_08_4")).containsExactlyElementsOf(rankingOfWeek("2026_08_3"))
+        assertThat(metaOf("2026_08_4_r1")!!.rowCount).isEqualTo(metaOf("2026_08_3_r1")!!.rowCount)
+        assertThat(pointerRows()).contains(PointerRow("2026_08_3", "PUBLISHED", 3L), PointerRow("2026_08_4", "PUBLISHED", 3L))
+    }
+
+    private fun purchaseOrder(orderId: Long, confirmedAt: String, vararg items: Pair<Long, Int>) {
+        val at = LocalDateTime.parse(confirmedAt)
+        items.forEach { (productId, quantity) ->
+            jdbcTemplate.update(
+                """
+                INSERT INTO product_purchase_activity
+                    (created_at, updated_at, order_id, product_id, quantity, user_id, confirmed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """.trimIndent(),
+                at,
+                at,
+                orderId,
+                productId,
+                quantity,
+                1L,
+                at,
+            )
+        }
+    }
+
+    private fun rankingOfWeek(snapshotId: String): List<Triple<Long, Long, Int>> =
+        jdbcTemplate.query(
+            "SELECT product_id, score, ranking FROM product_ranking WHERE snapshot_id = ? ORDER BY ranking",
+            { rs, _ -> Triple(rs.getLong("product_id"), rs.getLong("score"), rs.getInt("ranking")) },
+            snapshotId,
+        )
+
     private fun purchaseRankedProducts() {
         (1L..150L).forEach { purchase(productId = it, quantity = ((200 - it) * 10).toInt(), confirmedAt = "2026-11-10T00:00:00") }
     }
@@ -430,7 +492,7 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
 
     private fun firstPlusSecondOf(week: String): Map<Long, Long> =
         jdbcTemplate.query(
-            "SELECT product_id, SUM(sales_quantity) q FROM product_sales_snapshot WHERE snapshot_id IN (?, ?) GROUP BY product_id",
+            "SELECT product_id, SUM(quantity) q FROM purchase_activity_snapshot WHERE snapshot_id IN (?, ?) GROUP BY product_id",
             { rs, _ -> rs.getLong("product_id") to rs.getLong("q") },
             "${week}_r1",
             "${week}_r2",
@@ -448,6 +510,63 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
             end,
         ).toMap()
 
+    @DisplayName("r1 을 만들면, 주문·상품 행을 그대로 사본에 남기고 정보 행에 건수와 checksum 을 남긴다.")
+    @Test
+    fun writesRowsAndMeta_whenFirstSnapshotIsMade() {
+        purchase(productId = 7L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 9L, quantity = 5, confirmedAt = "2026-11-11T12:30:00")
+
+        launch("2026-11-16")
+
+        assertThat(
+            jdbcTemplate.queryForList(
+                "SELECT order_id, product_id, quantity FROM purchase_activity_snapshot WHERE snapshot_id = '2026_11_2_r1' ORDER BY order_id",
+            ).map { Triple(it["order_id"], it["product_id"], it["quantity"]) },
+        ).containsExactly(Triple(1L, 7L, 2), Triple(2L, 9L, 5))
+        val meta = metaOf("2026_11_2_r1")!!
+        assertThat(meta.revision).isEqualTo(1)
+        assertThat(meta.status).isEqualTo("FROZEN")
+        assertThat(meta.rowCount).isEqualTo(2L)
+        assertThat(meta.checksum).isEqualTo(
+            sha256("1\t7\t2\t2026-11-10T00:00:00.000000Z\n2\t9\t5\t2026-11-11T12:30:00.000000Z\n"),
+        )
+    }
+
+    @DisplayName("구매가 없는 주도 r1 정보 행을 남기고, 그 고정 시각을 r2 기준으로 쓴다.")
+    @Test
+    fun usesFrozenAtOfEmptyFirst_asLateBaseline() {
+        launch("2026-11-16")
+        assertThat(metaOf("2026_11_2_r1")!!.rowCount).isEqualTo(0L)
+        purchase(
+            productId = 1L,
+            quantity = 2,
+            confirmedAt = "2026-11-10T00:00:00",
+            createdAt = LocalDateTime.now(ZoneOffset.UTC).plusHours(1),
+        )
+
+        launch("2026-11-23")
+
+        assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(1L to 2L)
+        assertThat(metaOf("2026_11_2_r2")!!.rowCount).isEqualTo(1L)
+    }
+
+    private fun metaOf(snapshotId: String): MetaRow? =
+        jdbcTemplate.query(
+            "SELECT revision, status, row_count, checksum FROM product_sales_snapshot_meta WHERE snapshot_id = ?",
+            { rs, _ -> MetaRow(rs.getInt("revision"), rs.getString("status"), rs.getLong("row_count"), rs.getString("checksum")) },
+            snapshotId,
+        ).firstOrNull()
+
+    private data class MetaRow(
+        val revision: Int,
+        val status: String,
+        val rowCount: Long,
+        val checksum: String,
+    )
+
+    private fun sha256(text: String): String =
+        MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+
     private fun quantitiesOf(snapshotId: String): List<Pair<Long, Long>> =
         snapshotRows().filter { it.snapshotId == snapshotId }.map { it.productId to it.salesQuantity }
 
@@ -461,12 +580,13 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
                 .addString("snapshotId", SnapshotWeek.endedBefore(date).snapshotId)
                 .toJobParameters(),
         )
-        return Launched(execution.exitStatus, execution.jobInstance.instanceId)
+        return Launched(execution.exitStatus, execution.jobInstance.instanceId, execution.id)
     }
 
     private data class Launched(
         val exitStatus: ExitStatus,
         val instanceId: Long,
+        val executionId: Long,
     )
 
     private fun pointerRows(): List<PointerRow> =
@@ -526,7 +646,11 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
 
     private fun snapshotRows(): List<SnapshotRow> =
         jdbcTemplate.query(
-            "SELECT snapshot_id, product_id, sales_quantity, period_start, period_end FROM product_sales_snapshot",
+            """
+            SELECT snapshot_id, product_id, SUM(quantity) sales_quantity, MIN(period_start) period_start, MIN(period_end) period_end
+            FROM purchase_activity_snapshot
+            GROUP BY snapshot_id, product_id
+            """.trimIndent(),
         ) { rs, _ ->
             SnapshotRow(
                 snapshotId = rs.getString("snapshot_id"),

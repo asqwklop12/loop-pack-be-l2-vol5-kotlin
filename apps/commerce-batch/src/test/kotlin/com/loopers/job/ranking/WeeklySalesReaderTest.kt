@@ -51,8 +51,8 @@ class WeeklySalesReaderTest @Autowired constructor(
         assertThat(readAll("2026_11_2_r1")).containsExactly(
             sales(productId = 2L, salesQuantity = 90L, ranking = 1),
             sales(productId = 1L, salesQuantity = 40L, ranking = 2),
-            sales(productId = 3L, salesQuantity = 40L, ranking = 2),
-            sales(productId = 4L, salesQuantity = 5L, ranking = 3),
+            sales(productId = 3L, salesQuantity = 40L, ranking = 3),
+            sales(productId = 4L, salesQuantity = 5L, ranking = 4),
         )
     }
 
@@ -67,9 +67,9 @@ class WeeklySalesReaderTest @Autowired constructor(
         assertThat(read.periodStart).isEqualTo(LocalDate.parse("2026-11-09"))
     }
 
-    @DisplayName("판매 수량이 같으면 같은 순위를 주고, 다음 순위는 건너뛰지 않는다.")
+    @DisplayName("판매 수량이 같으면 상품 id 가 작은 쪽에 앞 순위를 준다.")
     @Test
-    fun givesSameRankingToTies_withoutSkippingNextRanking() {
+    fun ranksTiesByProductIdAsc() {
         snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 30L)
         snapshot("2026_11_2_r1", productId = 2L, salesQuantity = 30L)
         snapshot("2026_11_2_r1", productId = 3L, salesQuantity = 30L)
@@ -77,9 +77,9 @@ class WeeklySalesReaderTest @Autowired constructor(
 
         assertThat(readAll("2026_11_2_r1").map { it.productId to it.ranking }).containsExactly(
             1L to 1,
-            2L to 1,
-            3L to 1,
-            4L to 2,
+            2L to 2,
+            3L to 3,
+            4L to 4,
         )
     }
 
@@ -138,19 +138,23 @@ class WeeklySalesReaderTest @Autowired constructor(
         }
     }
 
+    private var nextOrderId = 1L
+
     private fun snapshot(snapshotId: String, productId: Long, salesQuantity: Long) {
         val now = LocalDateTime.of(2026, 11, 16, 0, 0)
         jdbcTemplate.update(
             """
-            INSERT INTO product_sales_snapshot
-                (snapshot_id, period_start, period_end, product_id, sales_quantity, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO purchase_activity_snapshot
+                (snapshot_id, period_start, period_end, order_id, product_id, quantity, confirmed_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent(),
             snapshotId,
             now.minusWeeks(1),
             now,
+            nextOrderId++,
             productId,
             salesQuantity,
+            now.minusDays(3),
             now,
             now,
         )

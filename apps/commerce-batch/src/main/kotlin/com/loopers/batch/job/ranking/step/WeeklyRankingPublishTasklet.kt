@@ -39,7 +39,7 @@ class WeeklyRankingPublishTasklet(
 
     companion object {
         private const val COUNT_SNAPSHOT_PRODUCTS =
-            "SELECT COUNT(DISTINCT product_id) FROM product_sales_snapshot WHERE snapshot_id IN (?, ?)"
+            "SELECT COUNT(DISTINCT product_id) FROM purchase_activity_snapshot WHERE snapshot_id IN (?, ?)"
         private const val COUNT_RANKING = "SELECT COUNT(*) FROM product_ranking WHERE snapshot_id = ?"
 
         private val PUBLISH = """

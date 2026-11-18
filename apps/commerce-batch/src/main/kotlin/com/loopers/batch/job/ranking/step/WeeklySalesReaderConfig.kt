@@ -43,9 +43,9 @@ class WeeklySalesReaderConfig(
             SELECT SUBSTRING_INDEX(MIN(snapshot_id), '_r', 1) AS snapshot_id,
                    DATE(MIN(period_start)) AS period_start,
                    product_id,
-                   SUM(sales_quantity) AS sales_quantity,
-                   DENSE_RANK() OVER (ORDER BY SUM(sales_quantity) DESC) AS ranking
-            FROM product_sales_snapshot
+                   SUM(quantity) AS sales_quantity,
+                   ROW_NUMBER() OVER (ORDER BY SUM(quantity) DESC, product_id) AS ranking
+            FROM purchase_activity_snapshot
             WHERE snapshot_id IN (?, ?)
             GROUP BY product_id
             ORDER BY sales_quantity DESC, product_id

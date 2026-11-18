@@ -11,9 +11,11 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 
 @StepScope
 @ConditionalOnProperty(name = ["spring.batch.job.name"], havingValue = WeeklySalesSnapshotJobConfig.JOB_NAME)
@@ -30,21 +32,34 @@ class WeeklySalesSnapshotTasklet(
     }
 
     private fun writeFirst(week: SnapshotWeek): Int {
-        if (snapshotExists(week.snapshotId)) return 0
-        return writeWholeWeek(week, week.snapshotId)
+        if (metaExists(week.snapshotId)) return 0
+
+        val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
+        val written = jdbcTemplate.update(
+            INSERT_WEEKLY_PURCHASES,
+            week.snapshotId,
+            week.startUtc,
+            week.endUtc,
+            nowUtc,
+            nowUtc,
+            week.startUtc,
+            week.endUtc,
+        )
+        writeMeta(week, week.snapshotId, FIRST_REVISION, nowUtc)
+        return written
     }
 
     private fun writeLate(week: SnapshotWeek): Int {
-        if (snapshotExists(week.lateSnapshotId)) return 0
+        if (metaExists(week.lateSnapshotId)) return 0
 
-        val firstSnapshotAt = jdbcTemplate.queryForObject(
-            "SELECT MAX(created_at) FROM product_sales_snapshot WHERE snapshot_id = ?",
+        val firstFrozenAt = jdbcTemplate.queryForList(
+            "SELECT frozen_at FROM product_sales_snapshot_meta WHERE snapshot_id = ?",
             LocalDateTime::class.java,
             week.snapshotId,
-        )
+        ).firstOrNull()
         val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
-        return jdbcTemplate.update(
-            INSERT_LATE_WEEKLY_SALES,
+        val written = jdbcTemplate.update(
+            INSERT_LATE_WEEKLY_PURCHASES,
             week.lateSnapshotId,
             week.startUtc,
             week.endUtc,
@@ -52,49 +67,80 @@ class WeeklySalesSnapshotTasklet(
             nowUtc,
             week.startUtc,
             week.endUtc,
-            firstSnapshotAt,
-            firstSnapshotAt,
+            firstFrozenAt,
+            firstFrozenAt,
         )
+        if (written == 0) return 0
+        writeMeta(week, week.lateSnapshotId, LATE_REVISION, nowUtc)
+        return written
     }
 
-    private fun writeWholeWeek(week: SnapshotWeek, snapshotId: String): Int {
-        val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
-        return jdbcTemplate.update(
-            INSERT_WEEKLY_SALES,
+    private fun writeMeta(week: SnapshotWeek, snapshotId: String, revision: Int, frozenAt: LocalDateTime) {
+        val digest = MessageDigest.getInstance("SHA-256")
+        var rowCount = 0L
+        jdbcTemplate.query(SELECT_FOR_CHECKSUM, { rs ->
+            val line = listOf(
+                rs.getLong("order_id"),
+                rs.getLong("product_id"),
+                rs.getInt("quantity"),
+                rs.getObject("confirmed_at", LocalDateTime::class.java).format(CHECKSUM_TIME),
+            ).joinToString("\t") + "\n"
+            digest.update(line.toByteArray(Charsets.UTF_8))
+            rowCount++
+        }, snapshotId)
+        jdbcTemplate.update(
+            INSERT_META,
             snapshotId,
             week.startUtc,
             week.endUtc,
-            nowUtc,
-            nowUtc,
-            week.startUtc,
-            week.endUtc,
+            revision,
+            frozenAt,
+            rowCount,
+            digest.digest().joinToString("") { "%02x".format(it) },
+            frozenAt,
+            frozenAt,
         )
     }
 
-    private fun snapshotExists(snapshotId: String): Boolean =
+    private fun metaExists(snapshotId: String): Boolean =
         jdbcTemplate.queryForList(
-            "SELECT 1 FROM product_sales_snapshot WHERE snapshot_id = ? LIMIT 1",
+            "SELECT 1 FROM product_sales_snapshot_meta WHERE snapshot_id = ? LIMIT 1",
             snapshotId,
         ).isNotEmpty()
 
     companion object {
-        private val INSERT_WEEKLY_SALES = """
-            INSERT INTO product_sales_snapshot
-                (snapshot_id, period_start, period_end, product_id, sales_quantity, created_at, updated_at)
-            SELECT ?, ?, ?, product_id, SUM(quantity), ?, ?
+        private const val FIRST_REVISION = 1
+        private const val LATE_REVISION = 2
+        private val CHECKSUM_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'")
+
+        private val INSERT_WEEKLY_PURCHASES = """
+            INSERT INTO purchase_activity_snapshot
+                (snapshot_id, period_start, period_end, order_id, product_id, quantity, confirmed_at, created_at, updated_at)
+            SELECT ?, ?, ?, order_id, product_id, quantity, confirmed_at, ?, ?
             FROM product_purchase_activity
             WHERE confirmed_at >= ? AND confirmed_at < ? AND deleted_at IS NULL
-            GROUP BY product_id
         """.trimIndent()
 
-        private val INSERT_LATE_WEEKLY_SALES = """
-            INSERT INTO product_sales_snapshot
-                (snapshot_id, period_start, period_end, product_id, sales_quantity, created_at, updated_at)
-            SELECT ?, ?, ?, product_id, SUM(quantity), ?, ?
+        private val INSERT_LATE_WEEKLY_PURCHASES = """
+            INSERT INTO purchase_activity_snapshot
+                (snapshot_id, period_start, period_end, order_id, product_id, quantity, confirmed_at, created_at, updated_at)
+            SELECT ?, ?, ?, order_id, product_id, quantity, confirmed_at, ?, ?
             FROM product_purchase_activity
             WHERE confirmed_at >= ? AND confirmed_at < ? AND deleted_at IS NULL
               AND (? IS NULL OR created_at > ?)
-            GROUP BY product_id
+        """.trimIndent()
+
+        private val SELECT_FOR_CHECKSUM = """
+            SELECT order_id, product_id, quantity, confirmed_at
+            FROM purchase_activity_snapshot
+            WHERE snapshot_id = ?
+            ORDER BY order_id, product_id
+        """.trimIndent()
+
+        private val INSERT_META = """
+            INSERT INTO product_sales_snapshot_meta
+                (snapshot_id, period_start, period_end, revision, status, frozen_at, row_count, checksum, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'FROZEN', ?, ?, ?, ?, ?)
         """.trimIndent()
     }
 }
