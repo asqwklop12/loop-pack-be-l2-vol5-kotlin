@@ -40,6 +40,7 @@ weeklySalesSnapshotJob
 - `weeklySalesSnapshotStep` 이 한 번 실행될 때 직전 주 r1 과 그 전 주 r2 를 함께 만든다. 두 주 모두 `requestDate` 로 계산한다.
 - 랭킹은 r1 과 r2 를 상품별로 더해서 매긴다. 리더가 두 스냅샷을 함께 읽어 더하고, 공개 스텝은 두 스냅샷을 합친 상품 수와 랭킹 행 수를 비교한다. 지금 일정에서는 랭킹을 매길 때 그 주 r2 가 아직 없어서, 직접 실행할 때만 r2 가 더해진다.
 - 로컬에서 돌린 결과는 `late-snapshot-local-run.md` 에 있다.
+- r1 + r2 로 점수가 틀어지는 경우를 드러낸 테스트와 결과는 `ranking-r1-r2-test.md` 에 있다.
 
 ## 랭킹 테이블
 

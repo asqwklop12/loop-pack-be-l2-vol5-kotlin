@@ -299,6 +299,155 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         )
     }
 
+    @DisplayName("T0. 상품별 r1 과 r2 를 더하면 그 주 구매 활동 합계와 같다.")
+    @Test
+    fun t0_firstPlusSecondEqualsWeeklyPurchases() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 2L, quantity = 5, confirmedAt = "2026-11-11T00:00:00")
+        launch("2026-11-16")
+        val afterFirst = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-12T00:00:00", createdAt = afterFirst)
+        purchase(productId = 3L, quantity = 4, confirmedAt = "2026-11-13T00:00:00", createdAt = afterFirst)
+
+        launch("2026-11-23")
+
+        assertThat(quantitiesOf("2026_11_2_r1")).containsExactlyInAnyOrder(1L to 3L, 2L to 5L)
+        assertThat(quantitiesOf("2026_11_2_r2")).containsExactlyInAnyOrder(1L to 2L, 3L to 4L)
+        assertThat(firstPlusSecondOf("2026_11_2")).isEqualTo(weeklyPurchasesOf(WEEK_START, WEEK_END))
+        assertThat(firstPlusSecondOf("2026_11_2")).containsExactlyInAnyOrderEntriesOf(mapOf(1L to 5L, 2L to 5L, 3L to 4L))
+    }
+
+    @DisplayName("T1a. 랭킹 스텝이 실패한 뒤 r2 가 생기고 재시작해도, 첫 실행과 같은 입력(r1)으로 매긴다.")
+    @Test
+    fun t1a_restartAfterSecondAppears_ranksWithFirstOnly() {
+        purchaseRankedProducts()
+        failRankingInsertAt(productId = 120L)
+        val failed = launchForInstance("2026-11-16")
+        assertThat(failed.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
+        assertThat(rankingRows()).hasSize(100)
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "FAILED", null))
+        val afterFirst = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
+        purchase(productId = 50L, quantity = 5000, confirmedAt = "2026-11-14T00:00:00", createdAt = afterFirst)
+        purchase(productId = 130L, quantity = 3, confirmedAt = "2026-11-14T00:00:00", createdAt = afterFirst)
+        launch("2026-11-23")
+        stopFailingRankingInsert()
+
+        val resumed = launchForInstance("2026-11-17")
+
+        assertThat(resumed.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(resumed.instanceId).isEqualTo(failed.instanceId)
+        assertThat(rankingOf(50L)).isEqualTo(1500L to 50)
+        assertThat(rankingOf(130L)).isEqualTo(700L to 130)
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 150L))
+    }
+
+    @DisplayName("T1b. 늦은 구매로 첫 청크 경계가 밀려도, 재시작하면 r1 만으로 150 행을 모두 매긴다.")
+    @Test
+    fun t1b_restartAfterChunkBoundaryShifts_ranksAllWithFirstOnly() {
+        purchaseRankedProducts()
+        failRankingInsertAt(productId = 120L)
+        val failed = launchForInstance("2026-11-16")
+        assertThat(failed.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
+        val afterFirst = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
+        purchase(productId = 150L, quantity = 5000, confirmedAt = "2026-11-14T00:00:00", createdAt = afterFirst)
+        launch("2026-11-23")
+        stopFailingRankingInsert()
+
+        val resumed = launchForInstance("2026-11-17")
+
+        assertThat(resumed.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(rankingRows()).hasSize(150)
+        assertThat(rankingRows().map { Triple(it.productId, it.score, it.ranking) })
+            .containsExactlyElementsOf((1L..150L).map { Triple(it, (200L - it) * 10, it.toInt()) })
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 150L))
+    }
+
+    @DisplayName("T2a. r1 을 만들기 전에 저장됐는데 created_at 이 r1 시각보다 늦어도, r2 에 두 번 세지 않는다.")
+    @Test
+    fun t2a_purchaseInFirstIsNotCountedAgainInSecond() {
+        val ahead = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00", createdAt = ahead)
+        launch("2026-11-16")
+
+        launch("2026-11-23")
+
+        assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 3L)
+        assertThat(quantitiesOf("2026_11_2_r2")).isEmpty()
+        assertThat(firstPlusSecondOf("2026_11_2")).isEqualTo(weeklyPurchasesOf(WEEK_START, WEEK_END))
+    }
+
+    @DisplayName("T2b. r1 을 만든 뒤 저장됐는데 created_at 이 r1 시각보다 이르면, r2 에서 빠지지 않는다.")
+    @Test
+    fun t2b_purchaseMissingFromFirstIsInSecond() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        launch("2026-11-16")
+        val firstSnapshotAt = jdbcTemplate.queryForObject(
+            "SELECT MAX(created_at) FROM product_sales_snapshot WHERE snapshot_id = '2026_11_2_r1'",
+            LocalDateTime::class.java,
+        )!!
+        purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-11T00:00:00", createdAt = firstSnapshotAt.minusSeconds(1))
+
+        launch("2026-11-23")
+
+        assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 3L)
+        assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(2L to 4L)
+        assertThat(firstPlusSecondOf("2026_11_2")).isEqualTo(weeklyPurchasesOf(WEEK_START, WEEK_END))
+    }
+
+    @DisplayName("T3. r2 를 만든 뒤에 도착한 구매는 r2 에도, 다른 주 스냅샷에도 들어가지 않는다.")
+    @Test
+    fun t3_purchaseAfterSecondIsNotReflected() {
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        launch("2026-11-16")
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-11T00:00:00", createdAt = LocalDateTime.now(ZoneOffset.UTC).plusHours(1))
+        launch("2026-11-23")
+        purchase(productId = 1L, quantity = 4, confirmedAt = "2026-11-12T00:00:00", createdAt = LocalDateTime.now(ZoneOffset.UTC).plusHours(2))
+
+        launch("2026-11-30")
+
+        assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 3L)
+        assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(1L to 2L)
+        assertThat(quantitiesOf("2026_11_2_r3")).isEmpty()
+        assertThat(firstPlusSecondOf("2026_11_2")).containsExactlyEntriesOf(mapOf(1L to 5L))
+        assertThat(weeklyPurchasesOf(WEEK_START, WEEK_END)).containsExactlyEntriesOf(mapOf(1L to 9L))
+        assertThat(quantitiesOf("2026_11_3_r2")).isEmpty()
+    }
+
+    private fun purchaseRankedProducts() {
+        (1L..150L).forEach { purchase(productId = it, quantity = ((200 - it) * 10).toInt(), confirmedAt = "2026-11-10T00:00:00") }
+    }
+
+    private fun failRankingInsertAt(productId: Long) {
+        jdbcTemplate.execute("ALTER TABLE product_ranking ADD CONSTRAINT chk_fail_ranking_insert CHECK (product_id <> $productId)")
+    }
+
+    private fun stopFailingRankingInsert() {
+        jdbcTemplate.execute("ALTER TABLE product_ranking DROP CHECK chk_fail_ranking_insert")
+    }
+
+    private fun rankingOf(productId: Long): Pair<Long, Int>? =
+        rankingRows().firstOrNull { it.productId == productId }?.let { it.score to it.ranking }
+
+    private fun firstPlusSecondOf(week: String): Map<Long, Long> =
+        jdbcTemplate.query(
+            "SELECT product_id, SUM(sales_quantity) q FROM product_sales_snapshot WHERE snapshot_id IN (?, ?) GROUP BY product_id",
+            { rs, _ -> rs.getLong("product_id") to rs.getLong("q") },
+            "${week}_r1",
+            "${week}_r2",
+        ).toMap()
+
+    private fun weeklyPurchasesOf(start: String, end: String): Map<Long, Long> =
+        jdbcTemplate.query(
+            """
+            SELECT product_id, SUM(quantity) q FROM product_purchase_activity
+            WHERE confirmed_at >= ? AND confirmed_at < ? AND deleted_at IS NULL
+            GROUP BY product_id
+            """.trimIndent(),
+            { rs, _ -> rs.getLong("product_id") to rs.getLong("q") },
+            start,
+            end,
+        ).toMap()
+
     private fun quantitiesOf(snapshotId: String): List<Pair<Long, Long>> =
         snapshotRows().filter { it.snapshotId == snapshotId }.map { it.productId to it.salesQuantity }
 
@@ -397,6 +546,9 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
     )
 
     companion object {
+        private const val WEEK_START = "2026-11-09 00:00:00"
+        private const val WEEK_END = "2026-11-16 00:00:00"
+
         private val CREATE_PURCHASE_ACTIVITY = """
             CREATE TABLE IF NOT EXISTS product_purchase_activity (
                 id bigint NOT NULL AUTO_INCREMENT,
