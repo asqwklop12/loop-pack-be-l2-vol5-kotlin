@@ -95,6 +95,7 @@ ORDER BY sales_quantity DESC, product_id;
 - 랭킹 스텝이 실패한 뒤 재시작할 때는 이미 쓴 청크가 있어도 건너뛰지 않고 이어서 쓴다.
 - `snapshot_id` 는 리더가 읽은 스냅샷 식별자에서 리비전(`_r1`)을 뗀 값으로 쓴다 (`2026_11_2_r1` → `2026_11_2`).
 - `created_at`, `updated_at` 은 UTC 로 넣는다. 스냅샷과 같은 기준으로 통일한다.
+- 같은 주에 같은 상품 행이 이미 있으면 upsert 한다. `(snapshot_id, product_id)` 가 겹치면 점수·순위·`updated_at` 만 바꾸고 `created_at` 은 그대로 둔다.
 
 ![랭킹 배치 라이터](images/ranking-batch-writer.png)
 
@@ -102,5 +103,10 @@ ORDER BY sales_quantity DESC, product_id;
 INSERT INTO product_ranking
     (snapshot_id, period_start, product_id, score, ranking, created_at, updated_at)
 VALUES
-    ('2026_11_2', '2026-11-09', 20, 9, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6));
+    ('2026_11_2', '2026-11-09', 20, 9, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+AS new
+ON DUPLICATE KEY UPDATE
+    score = new.score,
+    ranking = new.ranking,
+    updated_at = new.updated_at;
 ```

@@ -26,6 +26,11 @@ class WeeklyRankingWriterConfig(
                 (snapshot_id, period_start, product_id, score, ranking, created_at, updated_at)
             VALUES
                 (:snapshotId, :periodStart, :productId, :salesQuantity, :ranking, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            AS new
+            ON DUPLICATE KEY UPDATE
+                score = new.score,
+                ranking = new.ranking,
+                updated_at = new.updated_at
         """.trimIndent()
     }
 }
