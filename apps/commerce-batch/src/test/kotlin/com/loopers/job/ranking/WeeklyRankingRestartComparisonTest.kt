@@ -24,6 +24,7 @@ import org.springframework.test.context.TestPropertySource
 import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneOffset
 
 @SpringBootTest
 @SpringBatchTest
@@ -92,6 +93,32 @@ class WeeklyRankingRestartComparisonTest @Autowired constructor(
         assertThat(inputChecksum()).isEqualTo(EXPECTED_INPUT_CHECKSUM)
         assertThat(resultChecksum()).isEqualTo(EXPECTED_RESULT_CHECKSUM)
         assertThat(pointerStatus()).isEqualTo("PUBLISHED")
+    }
+
+    @DisplayName("연결 4구간: 고정한 뒤 같은 주의 늦은 구매가 들어와도, r1 입력 checksum 과 랭킹은 그대로다.")
+    @Test
+    fun lateArrivalAfterFreeze_keepsFirstInputAndRanking() {
+        launch()
+        jdbcTemplate.update(
+            """
+            INSERT INTO product_purchase_activity
+                (created_at, updated_at, order_id, product_id, quantity, user_id, confirmed_at)
+            VALUES (?, ?, 45, 8, 10, 1, '2026-08-21 10:00:00')
+            """.trimIndent(),
+            LocalDateTime.now(ZoneOffset.UTC).plusHours(1),
+            LocalDateTime.now(ZoneOffset.UTC).plusHours(1),
+        )
+
+        jobLauncherTestUtils.launchJob(
+            JobParametersBuilder()
+                .addLocalDate("requestDate", REQUEST_DATE.plusWeeks(1), false)
+                .addString("snapshotId", SnapshotWeek.endedBefore(REQUEST_DATE.plusWeeks(1)).snapshotId)
+                .toJobParameters(),
+        )
+
+        assertThat(inputChecksum()).isEqualTo(EXPECTED_INPUT_CHECKSUM)
+        assertThat(rankings()).containsExactlyElementsOf(EXPECTED_RANKINGS)
+        assertThat(resultChecksum()).isEqualTo(EXPECTED_RESULT_CHECKSUM)
     }
 
     private fun launch(): Launched {
