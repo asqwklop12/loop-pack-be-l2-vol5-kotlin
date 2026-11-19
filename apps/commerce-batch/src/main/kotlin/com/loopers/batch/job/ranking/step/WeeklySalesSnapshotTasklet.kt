@@ -25,8 +25,8 @@ class WeeklySalesSnapshotTasklet(
     private val jdbcTemplate: JdbcTemplate,
 ) : Tasklet {
     override fun execute(contribution: StepContribution, chunkContext: ChunkContext): RepeatStatus {
-        val written = writeFirst(SnapshotWeek.endedBefore(requestDate)) +
-            writeLate(SnapshotWeek.endedBefore(requestDate.minusWeeks(1)))
+        val week = SnapshotWeek.endedBefore(requestDate)
+        val written = writeFirst(week) + writeLate(week)
         contribution.incrementWriteCount(written.toLong())
         return RepeatStatus.FINISHED
     }
@@ -44,6 +44,7 @@ class WeeklySalesSnapshotTasklet(
             nowUtc,
             week.startUtc,
             week.endUtc,
+            week.endUtc,
         )
         writeMeta(week, week.snapshotId, FIRST_REVISION, nowUtc)
         return written
@@ -52,11 +53,6 @@ class WeeklySalesSnapshotTasklet(
     private fun writeLate(week: SnapshotWeek): Int {
         if (metaExists(week.lateSnapshotId)) return 0
 
-        val firstFrozenAt = jdbcTemplate.queryForList(
-            "SELECT frozen_at FROM product_sales_snapshot_meta WHERE snapshot_id = ?",
-            LocalDateTime::class.java,
-            week.snapshotId,
-        ).firstOrNull()
         val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
         val written = jdbcTemplate.update(
             INSERT_LATE_WEEKLY_PURCHASES,
@@ -67,8 +63,7 @@ class WeeklySalesSnapshotTasklet(
             nowUtc,
             week.startUtc,
             week.endUtc,
-            firstFrozenAt,
-            firstFrozenAt,
+            week.endUtc,
         )
         if (written == 0) return 0
         writeMeta(week, week.lateSnapshotId, LATE_REVISION, nowUtc)
@@ -119,6 +114,7 @@ class WeeklySalesSnapshotTasklet(
             SELECT ?, ?, ?, order_id, product_id, quantity, confirmed_at, ?, ?
             FROM product_purchase_activity
             WHERE confirmed_at >= ? AND confirmed_at < ? AND deleted_at IS NULL
+              AND created_at < ?
         """.trimIndent()
 
         private val INSERT_LATE_WEEKLY_PURCHASES = """
@@ -127,7 +123,7 @@ class WeeklySalesSnapshotTasklet(
             SELECT ?, ?, ?, order_id, product_id, quantity, confirmed_at, ?, ?
             FROM product_purchase_activity
             WHERE confirmed_at >= ? AND confirmed_at < ? AND deleted_at IS NULL
-              AND (? IS NULL OR created_at > ?)
+              AND created_at >= ?
         """.trimIndent()
 
         private val SELECT_FOR_CHECKSUM = """

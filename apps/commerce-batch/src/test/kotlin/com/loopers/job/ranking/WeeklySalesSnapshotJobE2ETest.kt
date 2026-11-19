@@ -231,45 +231,45 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "FAILED", null))
     }
 
-    @DisplayName("직전 주 r1 을 만들 때, 그 전 주에 r1 을 만든 뒤 생긴 구매만 상품별로 합쳐 r2 로 함께 남긴다.")
+    @DisplayName("직전 주에 확정된 구매 중 월요일 00:00 전에 저장된 건 r1, 00:00 이후에 저장된 건 r2 로 함께 남긴다.")
     @Test
-    fun writesLateSnapshotOfWeekBefore_withOnlyPurchasesCreatedAfterFirst() {
+    fun splitsFirstAndSecond_byCreatedBeforeOrAfterWeekEnd() {
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
-        launch("2026-11-16")
-        val afterFirst = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
-        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-12T00:00:00", createdAt = afterFirst)
-        purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-15T23:00:00", createdAt = afterFirst)
-        purchase(productId = 3L, quantity = 9, confirmedAt = "2026-11-16T00:00:00", createdAt = afterFirst)
+        purchase(productId = 2L, quantity = 1, confirmedAt = "2026-11-15T23:00:00", createdAt = at("2026-11-15T23:59:59.999999"))
+        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-12T00:00:00", createdAt = at("2026-11-16T00:00:00"))
+        purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-15T23:00:00", createdAt = at("2026-11-16T01:00:00"))
+        purchase(productId = 3L, quantity = 9, confirmedAt = "2026-11-16T00:00:00", createdAt = at("2026-11-16T00:10:00"))
 
-        val exitStatus = launch("2026-11-23")
+        val exitStatus = launch("2026-11-16")
 
         assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
+        assertThat(quantitiesOf("2026_11_2_r1")).containsExactlyInAnyOrder(1L to 2L, 2L to 1L)
         assertThat(quantitiesOf("2026_11_2_r2")).containsExactlyInAnyOrder(1L to 3L, 2L to 4L)
-        assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 2L)
-        assertThat(quantitiesOf("2026_11_3_r1")).containsExactly(3L to 9L)
     }
 
-    @DisplayName("그 전 주에 r1 을 만든 뒤 생긴 구매가 없으면, r2 를 만들지 않는다.")
+    @DisplayName("월요일 00:00 이후에 저장된 구매가 없으면, r2 를 만들지 않는다.")
     @Test
-    fun writesNoLateSnapshot_whenNoPurchaseCreatedAfterFirst() {
+    fun writesNoLateSnapshot_whenNoPurchaseCreatedAfterWeekEnd() {
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
+
         launch("2026-11-16")
 
-        launch("2026-11-23")
-
         assertThat(quantitiesOf("2026_11_2_r2")).isEmpty()
+        assertThat(metaOf("2026_11_2_r2")).isNull()
     }
 
-    @DisplayName("그 전 주 r1 이 없으면, 그 주 구매를 전부 r2 로 남긴다.")
+    @DisplayName("r1 과 r2 를 더해 랭킹을 매긴다.")
     @Test
-    fun writesWholeWeekAsLate_whenFirstSnapshotIsMissing() {
+    fun ranksWithFirstPlusSecond_inSameRun() {
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
-        purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-12T00:00:00")
+        purchase(productId = 2L, quantity = 3, confirmedAt = "2026-11-11T00:00:00")
+        purchase(productId = 1L, quantity = 4, confirmedAt = "2026-11-12T00:00:00", createdAt = at("2026-11-16T00:30:00"))
 
-        launch("2026-11-23")
+        launch("2026-11-16")
 
-        assertThat(quantitiesOf("2026_11_2_r1")).isEmpty()
-        assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(1L to 5L)
+        assertThat(rankingRows().map { Triple(it.productId, it.score, it.ranking) })
+            .containsExactly(Triple(1L, 6L, 1), Triple(2L, 3L, 2))
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 2L))
     }
 
     @DisplayName("그 주 r2 가 있으면, r1 과 r2 를 더해 랭킹을 쓰고 합친 상품 수와 비교해 PUBLISHED 로 남긴다.")
@@ -306,12 +306,10 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
     fun t0_firstPlusSecondEqualsWeeklyPurchases() {
         purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
         purchase(productId = 2L, quantity = 5, confirmedAt = "2026-11-11T00:00:00")
-        launch("2026-11-16")
-        val afterFirst = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
-        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-12T00:00:00", createdAt = afterFirst)
-        purchase(productId = 3L, quantity = 4, confirmedAt = "2026-11-13T00:00:00", createdAt = afterFirst)
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-12T00:00:00", createdAt = at("2026-11-16T00:20:00"))
+        purchase(productId = 3L, quantity = 4, confirmedAt = "2026-11-13T00:00:00", createdAt = at("2026-11-16T01:00:00"))
 
-        launch("2026-11-23")
+        launch("2026-11-16")
 
         assertThat(quantitiesOf("2026_11_2_r1")).containsExactlyInAnyOrder(1L to 3L, 2L to 5L)
         assertThat(quantitiesOf("2026_11_2_r2")).containsExactlyInAnyOrder(1L to 2L, 3L to 4L)
@@ -400,12 +398,11 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
     @Test
     fun t3_purchaseAfterSecondIsNotReflected() {
         purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-11T00:00:00", createdAt = at("2026-11-16T00:30:00"))
         launch("2026-11-16")
-        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-11T00:00:00", createdAt = LocalDateTime.now(ZoneOffset.UTC).plusHours(1))
-        launch("2026-11-23")
-        purchase(productId = 1L, quantity = 4, confirmedAt = "2026-11-12T00:00:00", createdAt = LocalDateTime.now(ZoneOffset.UTC).plusHours(2))
+        purchase(productId = 1L, quantity = 4, confirmedAt = "2026-11-12T00:00:00", createdAt = at("2026-11-16T02:00:00"))
 
-        launch("2026-11-30")
+        launch("2026-11-23")
 
         assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 3L)
         assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(1L to 2L)
@@ -472,23 +469,20 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         )
     }
 
-    @DisplayName("구매가 없는 주도 r1 정보 행을 남기고, 그 고정 시각을 r2 기준으로 쓴다.")
+    @DisplayName("r1 에 들 구매가 없어도 r1 정보 행을 남기고, r2 는 따로 정보 행을 남긴다.")
     @Test
-    fun usesFrozenAtOfEmptyFirst_asLateBaseline() {
+    fun writesEmptyFirstMeta_andSecondMeta_whenOnlyLatePurchasesExist() {
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00", createdAt = at("2026-11-16T00:30:00"))
+
         launch("2026-11-16")
+
         assertThat(metaOf("2026_11_2_r1")!!.rowCount).isEqualTo(0L)
-        purchase(
-            productId = 1L,
-            quantity = 2,
-            confirmedAt = "2026-11-10T00:00:00",
-            createdAt = LocalDateTime.now(ZoneOffset.UTC).plusHours(1),
-        )
-
-        launch("2026-11-23")
-
         assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(1L to 2L)
+        assertThat(metaOf("2026_11_2_r2")!!.revision).isEqualTo(2)
         assertThat(metaOf("2026_11_2_r2")!!.rowCount).isEqualTo(1L)
     }
+
+    private fun at(text: String): LocalDateTime = LocalDateTime.parse(text)
 
     private fun metaOf(snapshotId: String): MetaRow? =
         jdbcTemplate.query(
