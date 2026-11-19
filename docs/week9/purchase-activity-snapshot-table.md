@@ -44,7 +44,7 @@
 | `period_end`   | `datetime(6)` | not null           | 집계 구간 끝                                      |
 | `revision`     | `int`         | not null           | 식별자의 `r` 뒤 숫자                              |
 | `status`       | `varchar(20)` | not null           | `FROZEN`                                          |
-| `frozen_at`    | `datetime(6)` | not null           | 고정 시각 (UTC). r1 이면 r2 의 늦은 구매 기준이다 |
+| `frozen_at`    | `datetime(6)` | not null           | 고정 시각 (UTC)                                  |
 | `row_count`    | `bigint`      | not null           | 사본 행 수, 0 이상                                |
 | `checksum`     | `char(64)`    | not null           | 입력 checksum, SHA-256 소문자 hex                 |
 | `created_at`   | `datetime(6)` | not null           | BaseEntity                                        |
