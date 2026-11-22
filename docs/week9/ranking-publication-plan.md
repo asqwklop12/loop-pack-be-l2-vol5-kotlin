@@ -1,6 +1,25 @@
 # 주간 랭킹 공개 상태 기획
 
-2026-11-16 기획, 같은 날 구현했다. 테이블 정의는 `product-ranking-pointer-table.md` 에 있다.
+2026-11-16 기획, 같은 날 구현했다. 2026-11-22 리뷰 피드백으로 포인터를 리비전마다 두고, 미완성일 때 API 정책을 바꿨다. 바뀐 내용은 아래 "리비전 공개 (2026-11-22)" 절에 있고, 그 위 절들은 처음 기획이다. 테이블 정의는 `product-ranking-pointer-table.md` 에 있다.
+
+## 리비전 공개 (2026-11-22)
+
+리뷰 피드백: 계산 중인 부분 랭킹이 API 에 보이고, 최초 실행 뒤 도착한 늦은 구매를 새 revision 으로 반영하는 경로가 없다. 기존 공개본을 유지하면서 새 결과를 계산하고, 완성된 뒤에만 교체하라.
+
+- 포인터와 랭킹 행을 리비전마다 둔다 (`2026_11_2_r1`, `2026_11_2_r2`). r1 잡(UTC 월 00:30)과 r2 잡(UTC 월 01:30)이 각자 자기 리비전 포인터만 바꾼다.
+- API 는 `PUBLISHED` 인 가장 높은 리비전만 보여 준다. 공개된 리비전이 없으면 `NOT_PUBLISHED` 와 빈 items 다. 아래 "API 응답 정책" 의 `IN_PROGRESS` + 지금까지 쓴 items 정책은 없앴다.
+- r2 를 계산하는 동안에는 r2 포인터가 `IN_PROGRESS` 라 고객은 r1 을 계속 본다. r2 공개 tasklet 이 상품 수를 확인하고 r2 포인터를 `PUBLISHED` 로 바꾸는 순간 r2 로 바뀐다.
+- r1 이 r2 보다 늦게 공개돼도 가장 높은 리비전을 고르므로 r2 를 덮지 않는다.
+- r2 잡이 늦은 행이 없어 `NO_SNAPSHOT` 으로 끝나면, `beforeJob` 이 만든 r2 포인터를 `afterJob` 이 지운다.
+- 교체한 뒤에도 r1 랭킹 행과 포인터는 남긴다.
+
+| 상황 | 기대 포인터 | 기대 API |
+| ---- | ----------- | -------- |
+| r1 을 쓰다 죽음 | r1 `FAILED` (강제 종료면 `IN_PROGRESS`) | `NOT_PUBLISHED`, 빈 items |
+| r1 공개 뒤 r2 계산 중이거나 실패 | r1 `PUBLISHED`, r2 `IN_PROGRESS`·`FAILED` | `PUBLISHED`, r1 items |
+| r2 공개 | r1 `PUBLISHED`, r2 `PUBLISHED` | `PUBLISHED`, r2 items |
+| r1 이 공개 안 됐는데 r2 공개 | r1 `FAILED`, r2 `PUBLISHED` | `PUBLISHED`, r2 items |
+| 늦은 구매가 없음 | r1 `PUBLISHED`, r2 없음 | `PUBLISHED`, r1 items |
 
 ## 배경
 
@@ -21,7 +40,7 @@
 
 과제와의 관계: 실습 문서 p.8 은 "내부 상태 이름은 자유롭게 정하되, 완성 조건과 공개 pointer 변경은 하나의 DB TX 에서 보호"하라고 한다. 실패 기록은 요구가 아니지만 충돌하지도 않는다.
 
-범위 밖: 늦은 구매와 리비전(r2) 교체, 같은 주의 동시 실행 제어.
+범위 밖: 늦은 구매와 리비전(r2) 교체, 같은 주의 동시 실행 제어. 리비전 교체는 2026-11-22 에 더했다.
 
 `product_count` 는 공개 tasklet 이 확인을 통과한 개수만 담고, 실패하면 비워 둔다. 개수는 `StepExecution.writeCount` 가 아니라 `product_ranking` 행 수를 센다. writeCount 는 실행 한 번분이라 재시작하면 누적과 달라진다.
 
@@ -114,7 +133,7 @@ API 는 포인터를 먼저 읽고, `PUBLISHED` 일 때만 랭킹 행을 완성�
 
 ## 미룬 것
 
-- decider 의 "이미 끝남" 기준. 같은 주가 다른 JobInstance 로 실행될 때만 필요하다. 그런 경우는 r2 를 만들 때라서, r2 작업에서 다시 본다.
+- decider 의 "이미 끝남" 기준. 같은 주가 다른 JobInstance 로 실행될 때만 필요하다. 2026-11-22 r1·r2 를 리비전별 JobInstance 로 나누면서, 같은 리비전을 다른 JobInstance 로 돌려도 공개 스텝의 상품 수 확인에서 실패해 반쪽 랭킹이 공개되지 않는 것을 테스트로 확인했다.
 
 ## 테스트 시나리오
 

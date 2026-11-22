@@ -5,7 +5,7 @@
 | 컬럼           | 타입          | 제약               | 내용                                           |
 | -------------- | ------------- | ------------------ | ---------------------------------------------- |
 | `id`           | `bigint`      | PK, auto_increment |                                                |
-| `snapshot_id`  | `varchar(30)` | not null           | `연도_월_주차`, 리비전 없음 (예 `2026_11_2`)   |
+| `snapshot_id`  | `varchar(30)` | not null           | `연도_월_주차_리비전` (예 `2026_11_2_r1`, `2026_11_2_r2`) |
 | `period_start` | `date`        | not null           | 주 시작일, 월요일                              |
 | `product_id`   | `bigint`      | not null           | 상품                                           |
 | `score`        | `bigint`      | not null           | 점수, 1 이상                                   |

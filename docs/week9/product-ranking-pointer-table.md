@@ -1,13 +1,13 @@
 # 상품 랭킹 포인터 테이블 정의
 
-엔티티는 commerce-api 가 가진다. 상태와 쓰는 시점은 `ranking-publication-plan.md` 에 있다.
+엔티티는 commerce-api 가 가진다. 상태와 쓰는 시점은 `ranking-publication-plan.md` 에 있다. 한 주·한 리비전마다 한 행이다.
 
 ### product_ranking_pointer
 
 | 컬럼            | 타입          | 제약               | 내용                                                         |
 | --------------- | ------------- | ------------------ | ------------------------------------------------------------ |
 | `id`            | `bigint`      | PK, auto_increment |                                                              |
-| `snapshot_id`   | `varchar(30)` | not null           | `연도_월_주차`, 리비전 없음 (예 `2026_11_2`)                 |
+| `snapshot_id`   | `varchar(30)` | not null           | `연도_월_주차_리비전` (예 `2026_11_2_r1`, `2026_11_2_r2`)    |
 | `status`        | `varchar(20)` | not null           | `IN_PROGRESS`, `FAILED`, `PUBLISHED`                         |
 | `product_count` | `bigint`      |                    | 공개 확인을 통과한 `product_ranking` 행 수, 0 이상. 공개 전엔 null |
 | `created_at`    | `datetime(6)` | not null           | BaseEntity                                                   |
