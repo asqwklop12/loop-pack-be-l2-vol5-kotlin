@@ -19,7 +19,7 @@ class ProductRankingPointerTest {
         @ParameterizedTest
         @ValueSource(longs = [0, 1, 300])
         fun createsPublishedPointer_whenCountIsZeroOrMore(count: Long) {
-            val pointer = ProductRankingPointer("2026_11_2", ProductRankingPointerStatus.PUBLISHED, count)
+            val pointer = ProductRankingPointer("2026_11_2_r1", ProductRankingPointerStatus.PUBLISHED, count)
 
             assertThat(pointer.isPublished).isTrue()
             assertThat(pointer.productCount).isEqualTo(count)
@@ -29,15 +29,15 @@ class ProductRankingPointerTest {
         @ParameterizedTest
         @EnumSource(value = ProductRankingPointerStatus::class, names = ["IN_PROGRESS", "FAILED"])
         fun createsUnpublishedPointer_whenCountIsNull(status: ProductRankingPointerStatus) {
-            val pointer = ProductRankingPointer("2026_11_2", status, null)
+            val pointer = ProductRankingPointer("2026_11_2_r1", status, null)
 
             assertThat(pointer.isPublished).isFalse()
             assertThat(pointer.productCount).isNull()
         }
 
-        @DisplayName("스냅샷 식별자가 연도_월_주차 형식이 아니면, 예외가 발생한다.")
+        @DisplayName("스냅샷 식별자가 연도_월_주차_리비전(r1, r2) 형식이 아니면, 예외가 발생한다.")
         @ParameterizedTest
-        @ValueSource(strings = ["2026_11_2_r1", "2026_13_2", "2026_11_6", "2026-11-2", ""])
+        @ValueSource(strings = ["2026_11_2", "2026_11_2_r3", "2026_13_2_r1", "2026_11_6_r1", "2026-11-2-r1", ""])
         fun throws_whenSnapshotIdIsInvalid(snapshotId: String) {
             assertThrows<IllegalArgumentException> {
                 ProductRankingPointer(snapshotId, ProductRankingPointerStatus.IN_PROGRESS, null)
@@ -48,7 +48,7 @@ class ProductRankingPointerTest {
         @Test
         fun throws_whenCountIsNegative() {
             assertThrows<IllegalArgumentException> {
-                ProductRankingPointer("2026_11_2", ProductRankingPointerStatus.PUBLISHED, -1)
+                ProductRankingPointer("2026_11_2_r1", ProductRankingPointerStatus.PUBLISHED, -1)
             }
         }
 
@@ -56,7 +56,7 @@ class ProductRankingPointerTest {
         @Test
         fun throws_whenPublishedWithoutCount() {
             assertThrows<IllegalArgumentException> {
-                ProductRankingPointer("2026_11_2", ProductRankingPointerStatus.PUBLISHED, null)
+                ProductRankingPointer("2026_11_2_r1", ProductRankingPointerStatus.PUBLISHED, null)
             }
         }
 
@@ -64,13 +64,13 @@ class ProductRankingPointerTest {
         @ParameterizedTest
         @EnumSource(value = ProductRankingPointerStatus::class, names = ["IN_PROGRESS", "FAILED"])
         fun throws_whenUnpublishedWithCount(status: ProductRankingPointerStatus) {
-            assertThrows<IllegalArgumentException> { ProductRankingPointer("2026_11_2", status, 3) }
+            assertThrows<IllegalArgumentException> { ProductRankingPointer("2026_11_2_r1", status, 3) }
         }
     }
 
-    @DisplayName("주 시작일로 스냅샷 식별자를 만들 때, ")
+    @DisplayName("주 시작일로 주 식별자를 만들 때, ")
     @Nested
-    inner class SnapshotIdOf {
+    inner class WeekIdOf {
         @DisplayName("월요일이면, 그 달의 몇 번째 주인지로 만든다.")
         @ParameterizedTest
         @CsvSource(
@@ -79,14 +79,14 @@ class ProductRankingPointerTest {
             "2026-11-30, 2026_11_5",
             "2026-12-07, 2026_12_1",
         )
-        fun buildsSnapshotId_whenMonday(monday: String, expected: String) {
-            assertThat(ProductRankingPointer.snapshotIdOf(LocalDate.parse(monday))).isEqualTo(expected)
+        fun buildsWeekId_whenMonday(monday: String, expected: String) {
+            assertThat(ProductRankingPointer.weekIdOf(LocalDate.parse(monday))).isEqualTo(expected)
         }
 
         @DisplayName("월요일이 아니면, 예외가 발생한다.")
         @Test
         fun throws_whenNotMonday() {
-            assertThrows<IllegalArgumentException> { ProductRankingPointer.snapshotIdOf(LocalDate.parse("2026-11-10")) }
+            assertThrows<IllegalArgumentException> { ProductRankingPointer.weekIdOf(LocalDate.parse("2026-11-10")) }
         }
     }
 }

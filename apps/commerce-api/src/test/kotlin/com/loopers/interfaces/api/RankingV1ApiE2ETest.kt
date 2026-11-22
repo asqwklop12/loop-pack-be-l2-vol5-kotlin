@@ -58,14 +58,19 @@ class RankingV1ApiE2ETest @Autowired constructor(
         }
     }
 
-    private fun rank(product: Product, score: Long, ranking: Int) {
+    private fun rank(product: Product, score: Long, ranking: Int, snapshotId: String = FIRST) {
         productRankingJpaRepository.save(
-            ProductRanking(snapshotId = "2026_11_2", periodStart = monday, productId = product.id, score = score, ranking = ranking),
+            ProductRanking(snapshotId = snapshotId, periodStart = monday, productId = product.id, score = score, ranking = ranking),
         )
     }
 
-    private fun point(status: ProductRankingPointerStatus, productCount: Long? = null) {
-        productRankingPointerJpaRepository.save(ProductRankingPointer("2026_11_2", status, productCount))
+    private fun point(status: ProductRankingPointerStatus, productCount: Long? = null, snapshotId: String = FIRST) {
+        productRankingPointerJpaRepository.save(ProductRankingPointer(snapshotId, status, productCount))
+    }
+
+    companion object {
+        private const val FIRST = "2026_11_2_r1"
+        private const val SECOND = "2026_11_2_r2"
     }
 
     @DisplayName("GET /api/v1/rankings/weekly")
@@ -88,7 +93,7 @@ class RankingV1ApiE2ETest @Autowired constructor(
                 { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.PUBLISHED) },
                 { assertThat(data?.periodStart).isEqualTo(monday) },
                 { assertThat(data?.periodEnd).isEqualTo(LocalDate.parse("2026-11-15")) },
-                { assertThat(data?.snapshotId).isEqualTo("2026_11_2") },
+                { assertThat(data?.snapshotId).isEqualTo(FIRST) },
                 { assertThat(data?.inputFrozenAt).isNotNull() },
                 {
                     assertThat(data?.items?.map { Triple(it.productId, it.score, it.ranking) })
@@ -154,21 +159,80 @@ class RankingV1ApiE2ETest @Autowired constructor(
             )
         }
 
-        @DisplayName("포인터가 IN_PROGRESS 나 FAILED 면, IN_PROGRESS 와 지금까지 쓴 랭킹을 반환한다.")
+        @DisplayName("r1 을 쓰다 멈추거나 실패해 공개된 리비전이 없으면, 쓴 행이 있어도 NOT_PUBLISHED 와 빈 목록을 반환한다.")
         @ParameterizedTest
         @EnumSource(value = ProductRankingPointerStatus::class, names = ["IN_PROGRESS", "FAILED"])
-        fun returnsInProgressWithWrittenRankings_whenNotPublished(status: ProductRankingPointerStatus) {
+        fun returnsNotPublished_whenFirstIsNotPublished(status: ProductRankingPointerStatus) {
             val (a, b) = savedProducts(2)
             rank(a, score = 9, ranking = 1)
             rank(b, score = 5, ranking = 2)
             point(status)
 
-            val data = get("?periodStart=2026-11-09&limit=1").body?.data
+            val data = get("?periodStart=2026-11-09").body?.data
 
             assertAll(
-                { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.IN_PROGRESS) },
-                { assertThat(data?.snapshotId).isEqualTo("2026_11_2") },
-                { assertThat(data?.items?.map { it.productId }).containsExactly(a.id) },
+                { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.NOT_PUBLISHED) },
+                { assertThat(data?.snapshotId).isNull() },
+                { assertThat(data?.items).isEmpty() },
+            )
+        }
+
+        @DisplayName("r1 이 공개된 뒤 r2 를 쓰다 멈추거나 실패하면, r1 랭킹을 그대로 반환한다.")
+        @ParameterizedTest
+        @EnumSource(value = ProductRankingPointerStatus::class, names = ["IN_PROGRESS", "FAILED"])
+        fun returnsFirst_whenSecondIsNotPublished(status: ProductRankingPointerStatus) {
+            val (a, b) = savedProducts(2)
+            rank(a, score = 9, ranking = 1)
+            rank(b, score = 5, ranking = 2)
+            point(ProductRankingPointerStatus.PUBLISHED, productCount = 2)
+            rank(b, score = 15, ranking = 1, snapshotId = SECOND)
+            point(status, snapshotId = SECOND)
+
+            val data = get("?periodStart=2026-11-09").body?.data
+
+            assertAll(
+                { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.PUBLISHED) },
+                { assertThat(data?.snapshotId).isEqualTo(FIRST) },
+                { assertThat(data?.items?.map { Triple(it.productId, it.score, it.ranking) }).containsExactly(Triple(a.id, 9L, 1), Triple(b.id, 5L, 2)) },
+            )
+        }
+
+        @DisplayName("r2 가 공개되면, 늦은 구매가 반영된 r2 랭킹을 반환한다.")
+        @Test
+        fun returnsSecond_whenSecondIsPublished() {
+            val (a, b) = savedProducts(2)
+            rank(a, score = 9, ranking = 1)
+            rank(b, score = 5, ranking = 2)
+            point(ProductRankingPointerStatus.PUBLISHED, productCount = 2)
+            rank(b, score = 15, ranking = 1, snapshotId = SECOND)
+            rank(a, score = 9, ranking = 2, snapshotId = SECOND)
+            point(ProductRankingPointerStatus.PUBLISHED, productCount = 2, snapshotId = SECOND)
+
+            val data = get("?periodStart=2026-11-09").body?.data
+
+            assertAll(
+                { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.PUBLISHED) },
+                { assertThat(data?.snapshotId).isEqualTo(SECOND) },
+                { assertThat(data?.items?.map { Triple(it.productId, it.score, it.ranking) }).containsExactly(Triple(b.id, 15L, 1), Triple(a.id, 9L, 2)) },
+            )
+        }
+
+        @DisplayName("r2 가 공개된 뒤 r1 포인터가 남아 있거나 늦게 공개돼도, r2 랭킹을 반환한다.")
+        @ParameterizedTest
+        @EnumSource(value = ProductRankingPointerStatus::class, names = ["IN_PROGRESS", "FAILED", "PUBLISHED"])
+        fun returnsSecond_whateverFirstPointerIs(status: ProductRankingPointerStatus) {
+            val (a, b) = savedProducts(2)
+            rank(a, score = 9, ranking = 1)
+            point(status, productCount = if (status == ProductRankingPointerStatus.PUBLISHED) 1 else null)
+            rank(b, score = 15, ranking = 1, snapshotId = SECOND)
+            rank(a, score = 9, ranking = 2, snapshotId = SECOND)
+            point(ProductRankingPointerStatus.PUBLISHED, productCount = 2, snapshotId = SECOND)
+
+            val data = get("?periodStart=2026-11-09").body?.data
+
+            assertAll(
+                { assertThat(data?.snapshotId).isEqualTo(SECOND) },
+                { assertThat(data?.items?.map { it.productId }).containsExactly(b.id, a.id) },
             )
         }
 
@@ -181,7 +245,7 @@ class RankingV1ApiE2ETest @Autowired constructor(
 
             assertAll(
                 { assertThat(data?.status).isEqualTo(WeeklyRankingStatus.PUBLISHED) },
-                { assertThat(data?.snapshotId).isEqualTo("2026_11_2") },
+                { assertThat(data?.snapshotId).isEqualTo(FIRST) },
                 { assertThat(data?.inputFrozenAt).isNull() },
                 { assertThat(data?.items).isEmpty() },
             )

@@ -182,7 +182,7 @@ class WeeklyRankingRestartComparisonTest @Autowired constructor(
         jdbcTemplate.query(
             "SELECT product_id, score, ranking FROM product_ranking WHERE snapshot_id = ? ORDER BY ranking",
             { rs, _ -> Ranking(rs.getLong("product_id"), rs.getLong("score"), rs.getInt("ranking")) },
-            WEEK,
+            "${WEEK}_r1",
         )
 
     private data class Ranking(
@@ -204,7 +204,7 @@ class WeeklyRankingRestartComparisonTest @Autowired constructor(
         jdbcTemplate.queryForList(
             "SELECT status FROM product_ranking_pointer WHERE snapshot_id = ?",
             String::class.java,
-            WEEK,
+            "${WEEK}_r1",
         ).firstOrNull()
 
     companion object {

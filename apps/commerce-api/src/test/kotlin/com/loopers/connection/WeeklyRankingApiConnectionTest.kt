@@ -76,7 +76,7 @@ class WeeklyRankingApiConnectionTest @Autowired constructor(
     }
 
     companion object {
-        private const val WEEK = "2026_08_3"
+        private const val WEEK = "2026_08_3_r1"
         private val MONDAY = LocalDate.parse("2026-08-17")
     }
 }

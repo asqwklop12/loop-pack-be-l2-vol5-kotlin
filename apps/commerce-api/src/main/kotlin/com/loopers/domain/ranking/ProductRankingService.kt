@@ -11,14 +11,14 @@ class ProductRankingService(
     private val productRankingPointerRepository: ProductRankingPointerRepository,
 ) {
     @Transactional(readOnly = true)
-    fun findPointer(periodStart: LocalDate): ProductRankingPointer? =
-        productRankingPointerRepository.findBySnapshotId(ProductRankingPointer.snapshotIdOf(periodStart))
+    fun findPublishedPointer(periodStart: LocalDate): ProductRankingPointer? =
+        productRankingPointerRepository.findLatestPublished(ProductRankingPointer.weekIdOf(periodStart))
 
     @Transactional(readOnly = true)
-    fun findFirstWrittenAt(periodStart: LocalDate): ZonedDateTime? =
-        productRankingRepository.findFirstWrittenAt(periodStart)
+    fun findFirstWrittenAt(snapshotId: String): ZonedDateTime? =
+        productRankingRepository.findFirstWrittenAt(snapshotId)
 
     @Transactional(readOnly = true)
-    fun getPage(periodStart: LocalDate, page: Int, size: Int): List<ProductRanking> =
-        productRankingRepository.findPage(periodStart, page, size)
+    fun getPage(snapshotId: String, page: Int, size: Int): List<ProductRanking> =
+        productRankingRepository.findPage(snapshotId, page, size)
 }

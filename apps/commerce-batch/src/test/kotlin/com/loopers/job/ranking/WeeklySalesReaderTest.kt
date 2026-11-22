@@ -56,14 +56,14 @@ class WeeklySalesReaderTest @Autowired constructor(
         )
     }
 
-    @DisplayName("스냅샷 식별자는 리비전을 떼고, 주 시작일은 날짜로 읽는다.")
+    @DisplayName("랭킹 식별자는 실행한 리비전 그대로 읽고, 주 시작일은 날짜로 읽는다.")
     @Test
-    fun readsSnapshotIdWithoutRevisionAndPeriodStartAsDate() {
+    fun readsRevisionSnapshotIdAndPeriodStartAsDate() {
         snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 20L)
 
         val read = readAll("2026_11_2_r1").single()
 
-        assertThat(read.snapshotId).isEqualTo("2026_11_2")
+        assertThat(read.snapshotId).isEqualTo("2026_11_2_r1")
         assertThat(read.periodStart).isEqualTo(LocalDate.parse("2026-11-09"))
     }
 
@@ -83,19 +83,29 @@ class WeeklySalesReaderTest @Autowired constructor(
         )
     }
 
-    @DisplayName("그 주 r2 가 있으면, r1 과 r2 를 상품별로 더해 순위를 매긴다.")
+    @DisplayName("r2 를 읽으면, r1 과 r2 를 상품별로 더해 순위를 매긴다.")
     @Test
-    fun sumsFirstAndSecondRevisionPerProduct_whenSecondExists() {
+    fun sumsFirstAndSecondRevisionPerProduct_whenReadingSecond() {
         snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 20L)
         snapshot("2026_11_2_r1", productId = 2L, salesQuantity = 22L)
         snapshot("2026_11_2_r2", productId = 1L, salesQuantity = 5L)
         snapshot("2026_11_2_r2", productId = 3L, salesQuantity = 30L)
 
-        assertThat(readAll("2026_11_2_r1")).containsExactly(
-            sales(productId = 3L, salesQuantity = 30L, ranking = 1),
-            sales(productId = 1L, salesQuantity = 25L, ranking = 2),
-            sales(productId = 2L, salesQuantity = 22L, ranking = 3),
+        assertThat(readAll("2026_11_2_r2")).containsExactly(
+            sales(productId = 3L, salesQuantity = 30L, ranking = 1, snapshotId = "2026_11_2_r2"),
+            sales(productId = 1L, salesQuantity = 25L, ranking = 2, snapshotId = "2026_11_2_r2"),
+            sales(productId = 2L, salesQuantity = 22L, ranking = 3, snapshotId = "2026_11_2_r2"),
         )
+    }
+
+    @DisplayName("r1 을 읽으면, 그 주 r2 가 있어도 r1 만 읽는다.")
+    @Test
+    fun readsFirstOnly_whenReadingFirstEvenIfSecondExists() {
+        snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 20L)
+        snapshot("2026_11_2_r2", productId = 1L, salesQuantity = 5L)
+        snapshot("2026_11_2_r2", productId = 3L, salesQuantity = 30L)
+
+        assertThat(readAll("2026_11_2_r1")).containsExactly(sales(productId = 1L, salesQuantity = 20L, ranking = 1))
     }
 
     @DisplayName("다른 주에 r2 가 있어도, 지정한 주의 r1 을 읽는다.")
@@ -115,9 +125,9 @@ class WeeklySalesReaderTest @Autowired constructor(
         assertThat(readAll("2026_11_2_r1")).isEmpty()
     }
 
-    private fun sales(productId: Long, salesQuantity: Long, ranking: Int) =
+    private fun sales(productId: Long, salesQuantity: Long, ranking: Int, snapshotId: String = "2026_11_2_r1") =
         ProductSales(
-            snapshotId = "2026_11_2",
+            snapshotId = snapshotId,
             periodStart = LocalDate.parse("2026-11-09"),
             productId = productId,
             salesQuantity = salesQuantity,

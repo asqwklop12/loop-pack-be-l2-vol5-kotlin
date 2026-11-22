@@ -49,9 +49,9 @@ class ProductRankingPointer(
     }
 
     companion object {
-        private val SNAPSHOT_ID_FORMAT = Regex("""\d{4}_(0[1-9]|1[0-2])_[1-5]""")
+        private val SNAPSHOT_ID_FORMAT = Regex("""\d{4}_(0[1-9]|1[0-2])_[1-5]_r[12]""")
 
-        fun snapshotIdOf(monday: LocalDate): String {
+        fun weekIdOf(monday: LocalDate): String {
             require(monday.dayOfWeek == DayOfWeek.MONDAY) { "주 시작일은 월요일이어야 합니다. [시작일 = $monday]" }
             return "%04d_%02d_%d".format(monday.year, monday.monthValue, (monday.dayOfMonth - 1) / 7 + 1)
         }

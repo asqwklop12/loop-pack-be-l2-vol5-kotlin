@@ -23,8 +23,18 @@ class WeeklyRankingDecider(
         val snapshotId = requireNotNull(jobExecution.jobParameters.getString("snapshotId")) {
             "랭킹을 매길 스냅샷 식별자가 없습니다."
         }
-        return if (rankingExists(snapshotId)) FlowExecutionStatus(RANKING_EXISTS) else FlowExecutionStatus(CONTINUE)
+        return when {
+            !snapshotExists(snapshotId) -> FlowExecutionStatus(NO_SNAPSHOT)
+            rankingExists(snapshotId) -> FlowExecutionStatus(RANKING_EXISTS)
+            else -> FlowExecutionStatus(CONTINUE)
+        }
     }
+
+    private fun snapshotExists(snapshotId: String): Boolean =
+        jdbcTemplate.queryForList(
+            "SELECT 1 FROM product_sales_snapshot_meta WHERE snapshot_id = ? LIMIT 1",
+            snapshotId,
+        ).isNotEmpty()
 
     private fun isResumingRankingStep(jobExecution: JobExecution): Boolean {
         val last = jobRepository.getLastStepExecution(jobExecution.jobInstance, WeeklySalesSnapshotJobConfig.RANKING_STEP_NAME)
@@ -33,12 +43,13 @@ class WeeklyRankingDecider(
 
     private fun rankingExists(snapshotId: String): Boolean =
         jdbcTemplate.queryForList(
-            "SELECT 1 FROM product_ranking WHERE snapshot_id = SUBSTRING_INDEX(?, '_r', 1) LIMIT 1",
+            "SELECT 1 FROM product_ranking WHERE snapshot_id = ? LIMIT 1",
             snapshotId,
         ).isNotEmpty()
 
     companion object {
         const val RANKING_EXISTS = "RANKING_EXISTS"
+        const val NO_SNAPSHOT = "NO_SNAPSHOT"
         private const val CONTINUE = "CONTINUE"
     }
 }

@@ -13,7 +13,7 @@ class ProductRankingTest {
     private val monday = LocalDate.parse("2026-11-09")
 
     private fun ranking(
-        snapshotId: String = "2026_11_2",
+        snapshotId: String = "2026_11_2_r1",
         periodStart: LocalDate = monday,
         score: Long = 5,
         ranking: Int = 1,
@@ -33,23 +33,23 @@ class ProductRankingTest {
         fun createsRanking_whenAllValuesAreValid() {
             val ranking = ranking()
 
-            assertThat(ranking.snapshotId).isEqualTo("2026_11_2")
+            assertThat(ranking.snapshotId).isEqualTo("2026_11_2_r1")
             assertThat(ranking.periodStart).isEqualTo(monday)
             assertThat(ranking.productId).isEqualTo(1L)
             assertThat(ranking.score).isEqualTo(5L)
             assertThat(ranking.ranking).isEqualTo(1)
         }
 
-        @DisplayName("스냅샷 식별자가 연도_두 자리 월_주차 형식이면, 생성된다.")
+        @DisplayName("스냅샷 식별자가 연도_두 자리 월_주차_리비전(r1, r2) 형식이면, 생성된다.")
         @ParameterizedTest
-        @ValueSource(strings = ["2026_01_1", "2026_12_5", "2026_03_2"])
+        @ValueSource(strings = ["2026_01_1_r1", "2026_12_5_r2", "2026_03_2_r1"])
         fun createsRanking_whenSnapshotIdMatchesFormat(snapshotId: String) {
             assertThat(ranking(snapshotId = snapshotId).snapshotId).isEqualTo(snapshotId)
         }
 
-        @DisplayName("스냅샷 식별자가 형식에 맞지 않거나 리비전이 붙어 있으면, IllegalArgumentException 이 발생한다.")
+        @DisplayName("스냅샷 식별자가 형식에 맞지 않거나 리비전이 r1, r2 가 아니면, IllegalArgumentException 이 발생한다.")
         @ParameterizedTest
-        @ValueSource(strings = ["", "2026_11_2_r1", "2026_3_1", "2026_00_1", "2026_13_1", "2026_11_0", "2026_11_6"])
+        @ValueSource(strings = ["", "2026_11_2", "2026_11_2_r0", "2026_11_2_r3", "2026_3_1_r1", "2026_00_1_r1", "2026_13_1_r1", "2026_11_0_r1", "2026_11_6_r1"])
         fun throwsException_whenSnapshotIdDoesNotMatchFormat(snapshotId: String) {
             assertThrows<IllegalArgumentException> { ranking(snapshotId = snapshotId) }
         }

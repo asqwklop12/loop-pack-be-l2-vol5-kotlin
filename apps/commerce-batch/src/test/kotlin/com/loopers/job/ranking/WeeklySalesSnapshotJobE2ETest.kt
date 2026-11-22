@@ -2,6 +2,7 @@ package com.loopers.job.ranking
 
 import com.loopers.batch.job.ranking.SnapshotWeek
 import com.loopers.batch.job.ranking.WeeklySalesSnapshotJobConfig
+import com.loopers.batch.job.ranking.step.WeeklyRankingDecider
 import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -123,10 +124,10 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
 
         assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
         assertThat(rankingRows()).containsExactly(
-            RankingRow("2026_11_2", "2026-11-09", 2L, 9L, 1),
-            RankingRow("2026_11_2", "2026-11-09", 1L, 3L, 2),
-            RankingRow("2026_11_2", "2026-11-09", 3L, 3L, 3),
-            RankingRow("2026_11_2", "2026-11-09", 4L, 1L, 4),
+            RankingRow("2026_11_2_r1", "2026-11-09", 2L, 9L, 1),
+            RankingRow("2026_11_2_r1", "2026-11-09", 1L, 3L, 2),
+            RankingRow("2026_11_2_r1", "2026-11-09", 3L, 3L, 3),
+            RankingRow("2026_11_2_r1", "2026-11-09", 4L, 1L, 4),
         )
     }
 
@@ -138,7 +139,7 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
             """
             INSERT INTO product_ranking
                 (snapshot_id, period_start, product_id, score, ranking, created_at, updated_at)
-            VALUES ('2026_11_2', '2026-11-09', 99, 1, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            VALUES ('2026_11_2_r1', '2026-11-09', 99, 1, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
             """.trimIndent(),
         )
 
@@ -156,7 +157,7 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
 
         launch("2026-11-16")
 
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 2L))
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "PUBLISHED", 2L))
     }
 
     @DisplayName("랭킹 스텝이 실패하면, 포인터를 FAILED 로 남기고 상품 수는 비워 둔다.")
@@ -168,7 +169,7 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         val exitStatus = launch("2026-11-16")
 
         assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "FAILED", null))
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "FAILED", null))
     }
 
     @DisplayName("실패한 주를 날짜만 바꿔 다시 실행하면, 같은 JobInstance 로 이어서 랭킹을 쓰고 PUBLISHED 로 남긴다.")
@@ -185,7 +186,7 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(resumed.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
         assertThat(resumed.instanceId).isEqualTo(failed.instanceId)
         assertThat(rankingRows().map { it.productId }).containsExactly(2L, 1L)
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 2L))
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "PUBLISHED", 2L))
     }
 
     @DisplayName("이미 PUBLISHED 인 주를 다시 실행해도, 포인터의 상태와 상품 수를 그대로 둔다.")
@@ -195,13 +196,13 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         jdbcTemplate.update(
             """
             INSERT INTO product_ranking_pointer (snapshot_id, status, product_count, created_at, updated_at)
-            VALUES ('2026_11_2', 'PUBLISHED', 5, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            VALUES ('2026_11_2_r1', 'PUBLISHED', 5, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
             """.trimIndent(),
         )
 
         launch("2026-11-16")
 
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 5L))
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "PUBLISHED", 5L))
     }
 
     @DisplayName("구매가 없는 주는, 포인터를 PUBLISHED 와 상품 수 0 으로 남긴다.")
@@ -209,7 +210,7 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
     fun publishesPointerWithZero_whenNoPurchaseInWeek() {
         launch("2026-11-16")
 
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 0L))
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "PUBLISHED", 0L))
     }
 
     @DisplayName("스냅샷과 랭킹의 상품 수가 다르면, 공개하지 않고 포인터를 FAILED 로 남긴다.")
@@ -221,17 +222,17 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
             """
             INSERT INTO product_ranking
                 (snapshot_id, period_start, product_id, score, ranking, created_at, updated_at)
-            VALUES ('2026_11_2', '2026-11-09', 99, 1, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+            VALUES ('2026_11_2_r1', '2026-11-09', 99, 1, 1, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
             """.trimIndent(),
         )
 
         val exitStatus = launch("2026-11-16")
 
         assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "FAILED", null))
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "FAILED", null))
     }
 
-    @DisplayName("직전 주에 확정된 구매 중 월요일 00:00 전에 저장된 건 r1, 00:00 이후에 저장된 건 r2 로 함께 남긴다.")
+    @DisplayName("r1 은 직전 주 확정분 중 월요일 00:00 전에 저장된 행, r2 는 r1 사본에 없는 나머지 행으로 남긴다.")
     @Test
     fun splitsFirstAndSecond_byCreatedBeforeOrAfterWeekEnd() {
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
@@ -240,65 +241,113 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-15T23:00:00", createdAt = at("2026-11-16T01:00:00"))
         purchase(productId = 3L, quantity = 9, confirmedAt = "2026-11-16T00:00:00", createdAt = at("2026-11-16T00:10:00"))
 
-        val exitStatus = launch("2026-11-16")
+        launch("2026-11-16")
+
+        val exitStatus = launchLate("2026-11-16")
 
         assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
         assertThat(quantitiesOf("2026_11_2_r1")).containsExactlyInAnyOrder(1L to 2L, 2L to 1L)
         assertThat(quantitiesOf("2026_11_2_r2")).containsExactlyInAnyOrder(1L to 3L, 2L to 4L)
     }
 
-    @DisplayName("월요일 00:00 이후에 저장된 구매가 없으면, r2 를 만들지 않는다.")
+    @DisplayName("r1 사본에 없는 구매가 없으면, r2 사본·랭킹·포인터를 만들지 않고 끝낸다.")
     @Test
-    fun writesNoLateSnapshot_whenNoPurchaseCreatedAfterWeekEnd() {
+    fun writesNothingForSecond_whenNoLatePurchase() {
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
-
         launch("2026-11-16")
 
+        val exitStatus = launchLate("2026-11-16")
+
+        assertThat(exitStatus.exitCode).isEqualTo(WeeklyRankingDecider.NO_SNAPSHOT)
         assertThat(quantitiesOf("2026_11_2_r2")).isEmpty()
         assertThat(metaOf("2026_11_2_r2")).isNull()
+        assertThat(rankingRowsOf("2026_11_2_r2")).isEmpty()
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "PUBLISHED", 1L))
     }
 
-    @DisplayName("r1 과 r2 를 더해 랭킹을 매긴다.")
+    @DisplayName("r1 사본이 없으면, r2 잡은 실패하고 r2 사본을 만들지 않는다.")
     @Test
-    fun ranksWithFirstPlusSecond_inSameRun() {
+    fun failsSecond_whenFirstSnapshotIsMissing() {
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
+
+        val exitStatus = launchLate("2026-11-16")
+
+        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
+        assertThat(metaOf("2026_11_2_r2")).isNull()
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r2", "FAILED", null))
+    }
+
+    @DisplayName("r1 랭킹은 r1 만으로, r2 랭킹은 r1 과 r2 를 더해 따로 매기고, r1 랭킹은 남긴다.")
+    @Test
+    fun ranksFirstAloneAndSecondWithFirstPlusSecond() {
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
         purchase(productId = 2L, quantity = 3, confirmedAt = "2026-11-11T00:00:00")
-        purchase(productId = 1L, quantity = 4, confirmedAt = "2026-11-12T00:00:00", createdAt = at("2026-11-16T00:30:00"))
-
+        purchase(productId = 1L, quantity = 4, confirmedAt = "2026-11-12T00:00:00", createdAt = at("2026-11-16T00:10:00"))
         launch("2026-11-16")
 
-        assertThat(rankingRows().map { Triple(it.productId, it.score, it.ranking) })
+        launchLate("2026-11-16")
+
+        assertThat(rankingRowsOf("2026_11_2_r1").map { Triple(it.productId, it.score, it.ranking) })
+            .containsExactly(Triple(2L, 3L, 1), Triple(1L, 2L, 2))
+        assertThat(rankingRowsOf("2026_11_2_r2").map { Triple(it.productId, it.score, it.ranking) })
             .containsExactly(Triple(1L, 6L, 1), Triple(2L, 3L, 2))
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 2L))
-    }
-
-    @DisplayName("그 주 r2 가 있으면, r1 과 r2 를 더해 랭킹을 쓰고 합친 상품 수와 비교해 PUBLISHED 로 남긴다.")
-    @Test
-    fun ranksAndPublishesWithFirstPlusSecond_whenSecondExists() {
-        snapshot("2026_11_2_r1", productId = 1L, salesQuantity = 2L)
-        snapshot("2026_11_2_r2", productId = 1L, salesQuantity = 3L)
-        snapshot("2026_11_2_r2", productId = 2L, salesQuantity = 4L)
-
-        val exitStatus = launch("2026-11-16")
-
-        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
-        assertThat(rankingRows().map { Triple(it.productId, it.score, it.ranking) })
-            .containsExactly(Triple(1L, 5L, 1), Triple(2L, 4L, 2))
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 2L))
-    }
-
-    private fun snapshot(snapshotId: String, productId: Long, salesQuantity: Long) {
-        jdbcTemplate.update(
-            """
-            INSERT INTO purchase_activity_snapshot
-                (snapshot_id, period_start, period_end, order_id, product_id, quantity, confirmed_at, created_at, updated_at)
-            VALUES (?, '2026-11-09 00:00:00', '2026-11-16 00:00:00', ?, ?, ?, '2026-11-10 00:00:00', '2026-11-16 01:30:00', '2026-11-16 01:30:00')
-            """.trimIndent(),
-            snapshotId,
-            nextOrderId++,
-            productId,
-            salesQuantity,
+        assertThat(pointerRows()).containsExactlyInAnyOrder(
+            PointerRow("2026_11_2_r1", "PUBLISHED", 2L),
+            PointerRow("2026_11_2_r2", "PUBLISHED", 2L),
         )
+    }
+
+    @DisplayName("r2 랭킹 스텝이 실패하면, r1 포인터는 PUBLISHED 그대로 두고 r2 포인터만 FAILED 로 남긴다.")
+    @Test
+    fun keepsFirstPublished_whenSecondRankingFails() {
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-11T00:00:00", createdAt = at("2026-11-16T00:10:00"))
+        launch("2026-11-16")
+        failRankingInsertAt(productId = 2L)
+
+        val exitStatus = launchLate("2026-11-16")
+
+        assertThat(exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
+        assertThat(rankingRowsOf("2026_11_2_r1").map { it.productId to it.score }).containsExactly(1L to 2L)
+        assertThat(pointerRows()).containsExactlyInAnyOrder(
+            PointerRow("2026_11_2_r1", "PUBLISHED", 1L),
+            PointerRow("2026_11_2_r2", "FAILED", null),
+        )
+    }
+
+    @DisplayName("r1 이 공개되지 않았어도, r2 는 r1 과 r2 를 더해 계산하고 공개한다.")
+    @Test
+    fun publishesSecond_evenIfFirstIsNotPublished() {
+        purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00")
+        purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-11T00:00:00", createdAt = at("2026-11-16T00:10:00"))
+        failRankingInsertAt(productId = 1L)
+        launch("2026-11-16")
+        stopFailingRankingInsert()
+
+        launchLate("2026-11-16")
+
+        assertThat(rankingRowsOf("2026_11_2_r2").map { Triple(it.productId, it.score, it.ranking) })
+            .containsExactly(Triple(2L, 4L, 1), Triple(1L, 2L, 2))
+        assertThat(pointerRows()).containsExactlyInAnyOrder(
+            PointerRow("2026_11_2_r1", "FAILED", null),
+            PointerRow("2026_11_2_r2", "PUBLISHED", 2L),
+        )
+    }
+
+    @DisplayName("반쯤 쓴 랭킹이 남은 주를 다른 JobInstance 로 다시 돌려도, 상품 수가 달라 공개하지 않는다.")
+    @Test
+    fun doesNotPublishPartialRanking_whenRerunAsAnotherInstance() {
+        purchaseRankedProducts()
+        failRankingInsertAt(productId = 120L)
+        val failed = launchForInstance("2026-11-16")
+        stopFailingRankingInsert()
+
+        val another = launchForInstance("2026-11-16", runId = 1L)
+
+        assertThat(another.instanceId).isNotEqualTo(failed.instanceId)
+        assertThat(another.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
+        assertThat(rankingRowsOf("2026_11_2_r1")).hasSize(100)
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "FAILED", null))
     }
 
     @DisplayName("T0. 상품별 r1 과 r2 를 더하면 그 주 구매 활동 합계와 같다.")
@@ -308,8 +357,9 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         purchase(productId = 2L, quantity = 5, confirmedAt = "2026-11-11T00:00:00")
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-12T00:00:00", createdAt = at("2026-11-16T00:20:00"))
         purchase(productId = 3L, quantity = 4, confirmedAt = "2026-11-13T00:00:00", createdAt = at("2026-11-16T01:00:00"))
-
         launch("2026-11-16")
+
+        launchLate("2026-11-16")
 
         assertThat(quantitiesOf("2026_11_2_r1")).containsExactlyInAnyOrder(1L to 3L, 2L to 5L)
         assertThat(quantitiesOf("2026_11_2_r2")).containsExactlyInAnyOrder(1L to 2L, 3L to 4L)
@@ -317,28 +367,28 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(firstPlusSecondOf("2026_11_2")).containsExactlyInAnyOrderEntriesOf(mapOf(1L to 5L, 2L to 5L, 3L to 4L))
     }
 
-    @DisplayName("T1a. 랭킹 스텝이 실패한 뒤 r2 가 생기고 재시작해도, 첫 실행과 같은 입력(r1)으로 매긴다.")
+    @DisplayName("T1a. r1 랭킹 스텝이 실패한 뒤 r2 가 생기고 재시작해도, 첫 실행과 같은 입력(r1)으로 매긴다.")
     @Test
     fun t1a_restartAfterSecondAppears_ranksWithFirstOnly() {
         purchaseRankedProducts()
         failRankingInsertAt(productId = 120L)
         val failed = launchForInstance("2026-11-16")
         assertThat(failed.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
-        assertThat(rankingRows()).hasSize(100)
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "FAILED", null))
+        assertThat(rankingRowsOf("2026_11_2_r1")).hasSize(100)
+        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2_r1", "FAILED", null))
         val afterFirst = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
         purchase(productId = 50L, quantity = 5000, confirmedAt = "2026-11-14T00:00:00", createdAt = afterFirst)
         purchase(productId = 130L, quantity = 3, confirmedAt = "2026-11-14T00:00:00", createdAt = afterFirst)
-        launch("2026-11-23")
         stopFailingRankingInsert()
+        launchLate("2026-11-16")
 
         val resumed = launchForInstance("2026-11-17")
 
         assertThat(resumed.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
         assertThat(resumed.instanceId).isEqualTo(failed.instanceId)
-        assertThat(rankingOf(50L)).isEqualTo(1500L to 50)
-        assertThat(rankingOf(130L)).isEqualTo(700L to 130)
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 150L))
+        assertThat(rankingOf("2026_11_2_r1", 50L)).isEqualTo(1500L to 50)
+        assertThat(rankingOf("2026_11_2_r1", 130L)).isEqualTo(700L to 130)
+        assertThat(pointerOf("2026_11_2_r1")).isEqualTo(PointerRow("2026_11_2_r1", "PUBLISHED", 150L))
     }
 
     @DisplayName("T1b. 늦은 구매로 첫 청크 경계가 밀려도, 재시작하면 r1 만으로 150 행을 모두 매긴다.")
@@ -350,29 +400,29 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         assertThat(failed.exitStatus.exitCode).isEqualTo(ExitStatus.FAILED.exitCode)
         val afterFirst = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
         purchase(productId = 150L, quantity = 5000, confirmedAt = "2026-11-14T00:00:00", createdAt = afterFirst)
-        launch("2026-11-23")
         stopFailingRankingInsert()
+        launchLate("2026-11-16")
 
         val resumed = launchForInstance("2026-11-17")
 
         assertThat(resumed.exitStatus.exitCode).isEqualTo(ExitStatus.COMPLETED.exitCode)
-        assertThat(rankingRows()).hasSize(150)
-        assertThat(rankingRows().map { Triple(it.productId, it.score, it.ranking) })
+        assertThat(rankingRowsOf("2026_11_2_r1")).hasSize(150)
+        assertThat(rankingRowsOf("2026_11_2_r1").map { Triple(it.productId, it.score, it.ranking) })
             .containsExactlyElementsOf((1L..150L).map { Triple(it, (200L - it) * 10, it.toInt()) })
-        assertThat(pointerRows()).containsExactly(PointerRow("2026_11_2", "PUBLISHED", 150L))
+        assertThat(pointerOf("2026_11_2_r1")).isEqualTo(PointerRow("2026_11_2_r1", "PUBLISHED", 150L))
     }
 
-    @DisplayName("T2a. r1 을 만들기 전에 저장됐는데 created_at 이 r1 시각보다 늦어도, r2 에 두 번 세지 않는다.")
+    @DisplayName("T2a. r1 을 만들기 전에 저장됐는데 created_at 이 실제보다 늦게 찍혀도, r1 과 r2 중 한 곳에만 센다.")
     @Test
-    fun t2a_purchaseInFirstIsNotCountedAgainInSecond() {
+    fun t2a_purchaseWithAheadCreatedAtIsCountedOnce() {
         val ahead = LocalDateTime.now(ZoneOffset.UTC).plusHours(1)
         purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00", createdAt = ahead)
         launch("2026-11-16")
 
-        launch("2026-11-23")
+        launchLate("2026-11-16")
 
-        assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 3L)
-        assertThat(quantitiesOf("2026_11_2_r2")).isEmpty()
+        assertThat(quantitiesOf("2026_11_2_r1")).isEmpty()
+        assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(1L to 3L)
         assertThat(firstPlusSecondOf("2026_11_2")).isEqualTo(weeklyPurchasesOf(WEEK_START, WEEK_END))
     }
 
@@ -386,11 +436,12 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
             LocalDateTime::class.java,
         )!!
         purchase(productId = 2L, quantity = 4, confirmedAt = "2026-11-11T00:00:00", createdAt = firstSnapshotAt.minusSeconds(1))
+        purchase(productId = 3L, quantity = 5, confirmedAt = "2026-11-15T23:00:00", createdAt = at("2026-11-15T23:59:59"))
 
-        launch("2026-11-23")
+        launchLate("2026-11-16")
 
         assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 3L)
-        assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(2L to 4L)
+        assertThat(quantitiesOf("2026_11_2_r2")).containsExactlyInAnyOrder(2L to 4L, 3L to 5L)
         assertThat(firstPlusSecondOf("2026_11_2")).isEqualTo(weeklyPurchasesOf(WEEK_START, WEEK_END))
     }
 
@@ -400,8 +451,10 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         purchase(productId = 1L, quantity = 3, confirmedAt = "2026-11-10T00:00:00")
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-11T00:00:00", createdAt = at("2026-11-16T00:30:00"))
         launch("2026-11-16")
+        launchLate("2026-11-16")
         purchase(productId = 1L, quantity = 4, confirmedAt = "2026-11-12T00:00:00", createdAt = at("2026-11-16T02:00:00"))
 
+        assertThrows<JobInstanceAlreadyCompleteException> { launchLate("2026-11-17") }
         launch("2026-11-23")
 
         assertThat(quantitiesOf("2026_11_2_r1")).containsExactly(1L to 3L)
@@ -424,8 +477,12 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
         jdbcTemplate.execute("ALTER TABLE product_ranking DROP CHECK chk_fail_ranking_insert")
     }
 
-    private fun rankingOf(productId: Long): Pair<Long, Int>? =
-        rankingRows().firstOrNull { it.productId == productId }?.let { it.score to it.ranking }
+    private fun rankingOf(snapshotId: String, productId: Long): Pair<Long, Int>? =
+        rankingRowsOf(snapshotId).firstOrNull { it.productId == productId }?.let { it.score to it.ranking }
+
+    private fun rankingRowsOf(snapshotId: String): List<RankingRow> = rankingRows().filter { it.snapshotId == snapshotId }
+
+    private fun pointerOf(snapshotId: String): PointerRow? = pointerRows().firstOrNull { it.snapshotId == snapshotId }
 
     private fun firstPlusSecondOf(week: String): Map<Long, Long> =
         jdbcTemplate.query(
@@ -473,8 +530,9 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
     @Test
     fun writesEmptyFirstMeta_andSecondMeta_whenOnlyLatePurchasesExist() {
         purchase(productId = 1L, quantity = 2, confirmedAt = "2026-11-10T00:00:00", createdAt = at("2026-11-16T00:30:00"))
-
         launch("2026-11-16")
+
+        launchLate("2026-11-16")
 
         assertThat(metaOf("2026_11_2_r1")!!.rowCount).isEqualTo(0L)
         assertThat(quantitiesOf("2026_11_2_r2")).containsExactly(1L to 2L)
@@ -504,16 +562,17 @@ class WeeklySalesSnapshotJobE2ETest @Autowired constructor(
     private fun quantitiesOf(snapshotId: String): List<Pair<Long, Long>> =
         snapshotRows().filter { it.snapshotId == snapshotId }.map { it.productId to it.salesQuantity }
 
-    private fun launch(requestDate: String): ExitStatus = launchForInstance(requestDate).exitStatus
+    private fun launch(requestDate: String, revision: Int = 1): ExitStatus = launchForInstance(requestDate, revision).exitStatus
 
-    private fun launchForInstance(requestDate: String): Launched {
+    private fun launchLate(requestDate: String): ExitStatus = launch(requestDate, revision = 2)
+
+    private fun launchForInstance(requestDate: String, revision: Int = 1, runId: Long? = null): Launched {
         val date = LocalDate.parse(requestDate)
-        val execution = jobLauncherTestUtils.launchJob(
-            JobParametersBuilder()
-                .addLocalDate("requestDate", date, false)
-                .addString("snapshotId", SnapshotWeek.endedBefore(date).snapshotId)
-                .toJobParameters(),
-        )
+        val parameters = JobParametersBuilder()
+            .addLocalDate("requestDate", date, false)
+            .addString("snapshotId", SnapshotWeek.endedBefore(date).snapshotIdOf(revision))
+        runId?.let { parameters.addLong("run.id", it) }
+        val execution = jobLauncherTestUtils.launchJob(parameters.toJobParameters())
         return Launched(execution.exitStatus, execution.jobInstance.instanceId)
     }
 

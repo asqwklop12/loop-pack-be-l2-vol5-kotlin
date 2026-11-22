@@ -22,11 +22,16 @@ import java.time.format.DateTimeFormatter
 @Component
 class WeeklySalesSnapshotTasklet(
     @param:Value("#{jobParameters['requestDate']}") private val requestDate: LocalDate,
+    @param:Value("#{jobParameters['snapshotId']}") private val snapshotId: String,
     private val jdbcTemplate: JdbcTemplate,
 ) : Tasklet {
     override fun execute(contribution: StepContribution, chunkContext: ChunkContext): RepeatStatus {
         val week = SnapshotWeek.endedBefore(requestDate)
-        val written = writeFirst(week) + writeLate(week)
+        val revision = SnapshotWeek.revisionOf(snapshotId)
+        require(week.snapshotIdOf(revision) == snapshotId) {
+            "requestDate 와 snapshotId 가 같은 주가 아닙니다. [requestDate = $requestDate, snapshotId = $snapshotId]"
+        }
+        val written = if (revision == SnapshotWeek.FIRST_REVISION) writeFirst(week) else writeLate(week)
         contribution.incrementWriteCount(written.toLong())
         return RepeatStatus.FINISHED
     }
@@ -46,12 +51,13 @@ class WeeklySalesSnapshotTasklet(
             week.endUtc,
             week.endUtc,
         )
-        writeMeta(week, week.snapshotId, FIRST_REVISION, nowUtc)
+        writeMeta(week, week.snapshotId, SnapshotWeek.FIRST_REVISION, nowUtc)
         return written
     }
 
     private fun writeLate(week: SnapshotWeek): Int {
         if (metaExists(week.lateSnapshotId)) return 0
+        check(metaExists(week.snapshotId)) { "r1 사본이 없어 r2 를 만들 수 없습니다. [r1 = ${week.snapshotId}]" }
 
         val nowUtc = LocalDateTime.now(ZoneOffset.UTC)
         val written = jdbcTemplate.update(
@@ -63,10 +69,10 @@ class WeeklySalesSnapshotTasklet(
             nowUtc,
             week.startUtc,
             week.endUtc,
-            week.endUtc,
+            week.snapshotId,
         )
         if (written == 0) return 0
-        writeMeta(week, week.lateSnapshotId, LATE_REVISION, nowUtc)
+        writeMeta(week, week.lateSnapshotId, SnapshotWeek.LATE_REVISION, nowUtc)
         return written
     }
 
@@ -104,8 +110,6 @@ class WeeklySalesSnapshotTasklet(
         ).isNotEmpty()
 
     companion object {
-        private const val FIRST_REVISION = 1
-        private const val LATE_REVISION = 2
         private val CHECKSUM_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'")
 
         private val INSERT_WEEKLY_PURCHASES = """
@@ -120,10 +124,13 @@ class WeeklySalesSnapshotTasklet(
         private val INSERT_LATE_WEEKLY_PURCHASES = """
             INSERT INTO purchase_activity_snapshot
                 (snapshot_id, period_start, period_end, order_id, product_id, quantity, confirmed_at, created_at, updated_at)
-            SELECT ?, ?, ?, order_id, product_id, quantity, confirmed_at, ?, ?
-            FROM product_purchase_activity
-            WHERE confirmed_at >= ? AND confirmed_at < ? AND deleted_at IS NULL
-              AND created_at >= ?
+            SELECT ?, ?, ?, a.order_id, a.product_id, a.quantity, a.confirmed_at, ?, ?
+            FROM product_purchase_activity a
+            WHERE a.confirmed_at >= ? AND a.confirmed_at < ? AND a.deleted_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM purchase_activity_snapshot s
+                  WHERE s.snapshot_id = ? AND s.order_id = a.order_id AND s.product_id = a.product_id
+              )
         """.trimIndent()
 
         private val SELECT_FOR_CHECKSUM = """

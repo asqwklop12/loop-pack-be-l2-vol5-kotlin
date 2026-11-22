@@ -1,5 +1,6 @@
 package com.loopers.batch.job.ranking.step
 
+import com.loopers.batch.job.ranking.SnapshotWeek
 import com.loopers.batch.job.ranking.WeeklySalesSnapshotJobConfig
 import org.springframework.batch.core.StepContribution
 import org.springframework.batch.core.configuration.annotation.StepScope
@@ -19,27 +20,25 @@ class WeeklyRankingPublishTasklet(
     private val jdbcTemplate: JdbcTemplate,
 ) : Tasklet {
     override fun execute(contribution: StepContribution, chunkContext: ChunkContext): RepeatStatus {
-        val rankingSnapshotId = snapshotId.substringBefore("_r")
+        val inputs = SnapshotWeek.inputSnapshotIdsOf(snapshotId)
         val snapshotCount = jdbcTemplate.queryForObject(
-            COUNT_SNAPSHOT_PRODUCTS,
+            countSnapshotProducts(inputs.size),
             Long::class.java,
-            snapshotId,
-            "${rankingSnapshotId}_r2",
+            *inputs.toTypedArray(),
         ) ?: 0L
-        val rankingCount = count(COUNT_RANKING, rankingSnapshotId)
+        val rankingCount = jdbcTemplate.queryForObject(COUNT_RANKING, Long::class.java, snapshotId) ?: 0L
         check(snapshotCount == rankingCount) {
             "스냅샷과 랭킹의 상품 수가 다릅니다. [스냅샷 = $snapshotId, 스냅샷 상품 수 = $snapshotCount, 랭킹 상품 수 = $rankingCount]"
         }
-        jdbcTemplate.update(PUBLISH, rankingCount, rankingSnapshotId)
+        jdbcTemplate.update(PUBLISH, rankingCount, snapshotId)
         return RepeatStatus.FINISHED
     }
 
-    private fun count(sql: String, snapshotId: String): Long =
-        jdbcTemplate.queryForObject(sql, Long::class.java, snapshotId) ?: 0L
-
     companion object {
-        private const val COUNT_SNAPSHOT_PRODUCTS =
-            "SELECT COUNT(DISTINCT product_id) FROM purchase_activity_snapshot WHERE snapshot_id IN (?, ?)"
+        private fun countSnapshotProducts(inputCount: Int): String =
+            "SELECT COUNT(DISTINCT product_id) FROM purchase_activity_snapshot WHERE snapshot_id IN (${List(
+                inputCount,
+            ) { "?" }.joinToString()})"
         private const val COUNT_RANKING = "SELECT COUNT(*) FROM product_ranking WHERE snapshot_id = ?"
 
         private val PUBLISH = """

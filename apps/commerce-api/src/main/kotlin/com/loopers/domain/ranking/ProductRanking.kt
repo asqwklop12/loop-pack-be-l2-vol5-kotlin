@@ -53,6 +53,6 @@ class ProductRanking(
     }
 
     companion object {
-        private val SNAPSHOT_ID_FORMAT = Regex("""\d{4}_(0[1-9]|1[0-2])_[1-5]""")
+        private val SNAPSHOT_ID_FORMAT = Regex("""\d{4}_(0[1-9]|1[0-2])_[1-5]_r[12]""")
     }
 }

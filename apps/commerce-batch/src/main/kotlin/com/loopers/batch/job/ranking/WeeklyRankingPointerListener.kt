@@ -1,5 +1,6 @@
 package com.loopers.batch.job.ranking
 
+import com.loopers.batch.job.ranking.step.WeeklyRankingDecider
 import org.springframework.batch.core.BatchStatus
 import org.springframework.batch.core.JobExecution
 import org.springframework.batch.core.JobExecutionListener
@@ -18,13 +19,18 @@ class WeeklyRankingPointerListener(
     }
 
     override fun afterJob(jobExecution: JobExecution) {
-        if (jobExecution.status == BatchStatus.COMPLETED) return
         val snapshotId = rankingSnapshotIdOf(jobExecution) ?: return
-        jdbcTemplate.update(MARK_FAILED, snapshotId)
+        when {
+            jobExecution.exitStatus.exitCode == WeeklyRankingDecider.NO_SNAPSHOT -> jdbcTemplate.update(
+                REMOVE_UNPUBLISHED,
+                snapshotId,
+            )
+            jobExecution.status != BatchStatus.COMPLETED -> jdbcTemplate.update(MARK_FAILED, snapshotId)
+        }
     }
 
     private fun rankingSnapshotIdOf(jobExecution: JobExecution): String? =
-        jobExecution.jobParameters.getString("snapshotId")?.substringBefore("_r")
+        jobExecution.jobParameters.getString("snapshotId")
 
     companion object {
         private val MARK_IN_PROGRESS = """
@@ -35,6 +41,11 @@ class WeeklyRankingPointerListener(
             ON DUPLICATE KEY UPDATE
                 updated_at = IF(status = 'PUBLISHED', updated_at, UTC_TIMESTAMP(6)),
                 status = IF(status = 'PUBLISHED', status, 'IN_PROGRESS')
+        """.trimIndent()
+
+        private val REMOVE_UNPUBLISHED = """
+            DELETE FROM product_ranking_pointer
+            WHERE snapshot_id = ? AND status <> 'PUBLISHED'
         """.trimIndent()
 
         private val MARK_FAILED = """

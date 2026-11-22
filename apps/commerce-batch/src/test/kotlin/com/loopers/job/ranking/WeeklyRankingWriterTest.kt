@@ -62,7 +62,7 @@ class WeeklyRankingWriterTest @Autowired constructor(
         jdbcTemplate.update(
             """
             INSERT INTO product_ranking (snapshot_id, period_start, product_id, score, ranking, created_at, updated_at)
-            VALUES ('2026_11_2', '2026-11-09', 1, 2, 3, ?, ?)
+            VALUES ('2026_11_2_r1', '2026-11-09', 1, 2, 3, ?, ?)
             """.trimIndent(),
             createdAt,
             createdAt,
@@ -81,7 +81,7 @@ class WeeklyRankingWriterTest @Autowired constructor(
 
     private fun sales(productId: Long, salesQuantity: Long, ranking: Int) =
         ProductSales(
-            snapshotId = "2026_11_2",
+            snapshotId = "2026_11_2_r1",
             periodStart = LocalDate.parse("2026-11-09"),
             productId = productId,
             salesQuantity = salesQuantity,

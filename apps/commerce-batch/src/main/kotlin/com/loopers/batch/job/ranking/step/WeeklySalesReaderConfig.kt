@@ -1,5 +1,6 @@
 package com.loopers.batch.job.ranking.step
 
+import com.loopers.batch.job.ranking.SnapshotWeek
 import org.springframework.batch.core.configuration.annotation.StepScope
 import org.springframework.batch.item.database.JdbcCursorItemReader
 import org.springframework.batch.item.database.builder.JdbcCursorItemReaderBuilder
@@ -17,12 +18,13 @@ class WeeklySalesReaderConfig(
     @Bean(READER_NAME)
     fun weeklySalesReader(
         @Value("#{jobParameters['snapshotId']}") snapshotId: String,
-    ): JdbcCursorItemReader<ProductSales> =
-        JdbcCursorItemReaderBuilder<ProductSales>()
+    ): JdbcCursorItemReader<ProductSales> {
+        val inputs = SnapshotWeek.inputSnapshotIdsOf(snapshotId)
+        return JdbcCursorItemReaderBuilder<ProductSales>()
             .name(READER_NAME)
             .dataSource(dataSource)
-            .sql(SELECT_WEEKLY_SALES)
-            .queryArguments(snapshotId, lateSnapshotIdOf(snapshotId))
+            .sql(selectWeeklySales(inputs.size))
+            .queryArguments(listOf(snapshotId) + inputs)
             .rowMapper { rs, _ ->
                 ProductSales(
                     snapshotId = rs.getString("snapshot_id"),
@@ -33,20 +35,19 @@ class WeeklySalesReaderConfig(
                 )
             }
             .build()
+    }
 
     companion object {
         const val READER_NAME = "weeklySalesReader"
 
-        private fun lateSnapshotIdOf(snapshotId: String): String = "${snapshotId.substringBefore("_r")}_r2"
-
-        private val SELECT_WEEKLY_SALES = """
-            SELECT SUBSTRING_INDEX(MIN(snapshot_id), '_r', 1) AS snapshot_id,
+        private fun selectWeeklySales(inputCount: Int): String = """
+            SELECT ? AS snapshot_id,
                    DATE(MIN(period_start)) AS period_start,
                    product_id,
                    SUM(quantity) AS sales_quantity,
                    ROW_NUMBER() OVER (ORDER BY SUM(quantity) DESC, product_id) AS ranking
             FROM purchase_activity_snapshot
-            WHERE snapshot_id IN (?, ?)
+            WHERE snapshot_id IN (${List(inputCount) { "?" }.joinToString()})
             GROUP BY product_id
             ORDER BY sales_quantity DESC, product_id
         """.trimIndent()
