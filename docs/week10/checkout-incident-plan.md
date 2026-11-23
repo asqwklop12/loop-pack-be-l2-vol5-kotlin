@@ -7,12 +7,21 @@
 | 날짜 | 단계 | 한 일 | 결과 |
 | ---- | ---- | ----- | ---- |
 | 2026-11-22 | 1 | `LocalPgFixture`·`LocalPgFixtureTest`·`CheckoutIncidentTest`(baseline) 추가. 프로덕션 코드 변경 없음 | fixture 5개, baseline 1개 통과. ktlint·ArchUnit 통과 |
+| 2026-11-23 | 2 | PG 경계 로그 3줄, gauge `payment.pending.stale`, `transactionKey` 전달, 관측 테스트 `observesLostResponse` 추가 | incident 7개 통과. commerce-api 전체 479개 중 8개 실패 — 모두 Outbox·이벤트 테스트이고 변경 전 커밋 d8c12ca 에서도 같은 8개가 실패함. ktlint·ArchUnit 통과 |
 
 1번에서 알게 된 것:
 
 - 2번 로그 작업 때 주의: PG timeout 은 예외 이름이 아니라 원인이 `SocketTimeoutException` 인지로 판단한다. 실제로는 `ResourceAccessException` 이 아니라 `RestClientException` 으로 와서, 이름으로 가르면 timeout 을 다른 실패로 잘못 기록한다.
 - baseline 실측: Payment `SUCCESS` 10, PG 거래 10(모두 `SUCCESS`, 금액 39,000), create 10(중복 0), 재고 예약 `COMMITTED` 10, 상품 재고 30 → 20, 포인트 50,000 그대로, management 포트의 health `UP`.
 - 테스트 설정: `pg.read-timeout=500ms`, fixture 의 응답 유실 대기 1.5s, `management.server.port=0`(랜덤).
+
+2번에서 알게 된 것:
+
+- Spring Boot 테스트는 지표 내보내기를 기본으로 끈다. `/actuator/prometheus` 가 없어서 gauge 가 안 보였다. 관측 테스트에만 `@AutoConfigureObservability(tracing = false)` 를 붙였다.
+- 실제 로그: `PG 결제 응답을 받지 못했다. orderId=1 paymentKey=… failure=TIMEOUT cause=java.net.SocketTimeoutException: Read timed out`
+- gauge 관찰 범위: 생성 후 `payment.metrics.stale-pending-after`(기본 1m, 테스트 2s)가 지난 PENDING. 갱신 주기: Prometheus 가 수집할 때마다 DB 를 센다(로컬 Prometheus 는 5초 간격). 그래서 실제 값은 기준 시간 + 수집 간격만큼 늦게 오를 수 있다.
+- 테스트 사이 주문 ID 가 다시 1 부터 시작해서(TRUNCATE) fixture 거래가 섞일 수 있다. `LocalPgFixture.reset()` 을 추가해 테스트마다 비운다.
+- settle 반영 로그는 과제 원문에 없어 넣지 않았다.
 
 ## 목표
 
@@ -90,9 +99,46 @@ baseline 기대값:
 
 ### 2. 관측 연결
 
-- 결제 요청·응답·timeout 경계에 orderId·paymentKey·transactionKey 를 남기는 구조화 로그.
-- 미종결 결제 수 gauge 하나. 이름과 범위(PENDING 전체를 세는지)는 이 단계에서 정한다. label 에 식별자를 넣지 않는다.
-- 테스트가 실제 Actuator health 와 Prometheus 응답을 가져와 gauge 가 존재하고 바뀌는지 확인한다.
+장애를 내기 전에 볼 수단을 미리 넣어 두는 단계다. 결제 동작(성공·실패·재고·포인트)은 바꾸지 않고 로그와 지표만 추가한다. 설정만으로는 안 되고 코드를 추가해야 한다. 업무 지표와 주문별 로그는 Spring·Micrometer 설정으로 생기지 않는다.
+
+과제 근거: "특정 주문을 연결하는 구조화 로그를 실제 경계에 남기고, 현재 미확인 결제 수를 알려 주는 업무 지표 하나를 추가합니다." / 체크리스트 "실제 health·업무 지표·식별자별 경계 기록으로 증상을 설명한다."
+
+정한 것 (2026-11-23):
+
+- gauge 는 **일정 시간이 지난 PENDING** 만 센다. 정상 결제도 콜백 전 잠깐 PENDING 이라 전체를 세면 0 이 아니어도 사고라고 단정할 수 없다. 기준 시간은 설정값(기본 1분).
+- `PaymentTransaction` 에 `transactionKey` 필드를 추가한다. 지금은 PG 응답의 거래 키를 받아 두지 않고 버린다. 5단계 reconcile 에서도 쓴다.
+
+메트릭 1개 (안):
+
+| 이름 | 값 | label |
+| ---- | -- | ----- |
+| `payment.pending.stale` | 생성 후 기준 시간을 넘긴 PENDING 결제 수 | 없음 (orderId·userId 금지) |
+
+로그 4줄 (안):
+
+| 위치 | 언제 | 남길 값 | 가르는 가설 |
+| ---- | ---- | ------- | ----------- |
+| `OrderFacade.confirm` | PG 호출 직전 | orderId, paymentKey | 요청을 보냈다는 사실 |
+| `OrderFacade.confirm` | PG 응답 받음 | orderId, paymentKey, transactionKey, status | 응답을 받았다 → 응답 유실 아님 |
+| `OrderFacade.confirm` | PG 호출 실패 | orderId, paymentKey, failure(`TIMEOUT` 또는 예외 이름) | timeout 이면 응답 유실 쪽 증거 |
+| `OrderConfirmation.settle` | DB 반영 뒤 | orderId, paymentKey, 반영한 status | 응답은 받았는데 반영 로그가 없으면 내부 반영 실패 쪽 증거 |
+
+- timeout 판단은 근본 원인이 `SocketTimeoutException` 인지로 한다 (1단계에서 알게 된 것).
+- 콜백 로그는 `PaymentCallbackHandler` 에 이미 있다(orderId, transactionKey). 추가하지 않는다.
+- 4번째 로그(settle 반영)는 과제 원문에 없어서 넣지 않았다 (2026-11-23).
+
+함께 바꿀 것: `PgDto` → `PaymentTransaction` → `PaymentResult` 로 `transactionKey` 전달, 기준 시간 설정 1줄.
+
+확인: 테스트가 실제 Actuator health 와 Prometheus 응답을 가져와 gauge 가 존재하고 바뀌는지, 로그에 orderId 와 `TIMEOUT` 이 찍히는지 본다.
+
+로컬 모니터링 상태 (2026-11-23 확인):
+
+- Prometheus `localhost:9090` 정상, `host.docker.internal:8081/actuator/prometheus` 를 5초마다 수집, target `up`.
+- Grafana `localhost:3000` 정상(13.2.1), 데이터소스 Prometheus 연결됨.
+- 결제 관련 지표 0개.
+- 8080/8081 에 떠 있는 commerce-api 는 11-13 다른 세션이 띄운 예전 jar 다. 2단계 코드를 Grafana 로 보려면 이걸 내리고 이번 코드로 다시 띄워야 한다.
+
+구현 완료 (2026-11-23, 미커밋).
 
 ### 3. 같은 상태를 유지하는 사고 실험
 
@@ -133,4 +179,5 @@ fault 기대값 (별도 장애 집합 10건, 그중 고정한 3건만 응답 유
 - **reconcile 경로를 이번에 만들지**: 과제는 W5 에 "본인 주문 reconcile API"가 있다고 전제하는데 없다. 5단계 전에 정한다.
 - **주문 확정 → Outbox 연결**: 끊겨 있어서 6단계가 성립하지 않는다. 연결한다면 이벤트를 주문 확정 시점(PG 호출 전)에 낼지, 결제 성공 시점에 낼지 정해야 한다. 지금 구조대로 주문 확정 때 내면 미확인 결제의 구매 활동도 랭킹에 들어간다.
 - **사용자 범위**: PG 계약(`PgDto.PaymentRequest`)에 사용자 필드가 없다. "같은 계정" 검증을 무엇으로 할지.
-- **미종결 gauge 이름과 범위**: 2단계에서 정한다.
+- ~~미종결 gauge 이름과 범위~~: 범위는 정함(일정 시간 지난 PENDING). 이름은 `payment.pending.stale` 안.
+- ~~settle 반영 로그를 넣을지~~: 넣지 않음. 4단계에서 증거가 부족하면 다시 본다.

@@ -59,6 +59,12 @@ class LocalPgFixture(
         holdCallbackOrders.clear()
     }
 
+    fun reset() {
+        clearFaults()
+        transactions.clear()
+        createAttempts.clear()
+    }
+
     fun faultsCleared(): Boolean = dropResponseOrders.isEmpty() && holdCallbackOrders.isEmpty()
 
     fun transactionOf(orderId: Long): Transaction? = transactions[orderId]
