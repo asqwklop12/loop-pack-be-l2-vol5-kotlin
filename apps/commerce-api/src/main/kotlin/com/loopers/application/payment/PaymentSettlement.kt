@@ -8,12 +8,15 @@ import com.loopers.domain.product.StockReservation
 import com.loopers.domain.product.StockReservationService
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
+import java.time.Clock
+import java.time.ZonedDateTime
 
 @Component
 class PaymentSettlement(
     private val stockReservationService: StockReservationService,
     private val orderEventOutbox: OrderEventOutbox,
     private val events: ApplicationEventPublisher,
+    private val clock: Clock,
 ) {
     fun reflect(payment: Payment, status: PaymentStatus) {
         when (status) {
@@ -24,7 +27,7 @@ class PaymentSettlement(
     }
 
     private fun succeed(payment: Payment) {
-        payment.markSuccess()
+        payment.markSuccess(ZonedDateTime.now(clock))
         val reserved = stockReservationService.commit(payment.orderId)
         val confirmed = confirmedEvent(payment, reserved)
 
