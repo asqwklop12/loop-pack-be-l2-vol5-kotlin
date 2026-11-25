@@ -27,6 +27,7 @@ import org.junit.jupiter.api.extension.ExtendWith
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.system.CapturedOutput
 import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.boot.test.web.client.TestRestTemplate
@@ -37,9 +38,13 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Primary
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ExtendWith(OutputCaptureExtension::class)
@@ -63,6 +68,8 @@ class CheckoutIncidentTest @Autowired constructor(
 
     @BeforeEach
     fun setUp() {
+        databaseCleanUp.truncateAllTables()
+        clock.set(BASELINE_SETTLED_AT)
         pg.callbackUrl = "http://localhost:$serverPort/api/v1/payments/callback"
     }
 
@@ -98,6 +105,7 @@ class CheckoutIncidentTest @Autowired constructor(
             pg.dropResponseFor(faultOrderIds)
             pg.holdCallbackFor(faultOrderIds)
             confirmed = orderIds.associate { (userId, orderId) -> orderId to confirm(userId, orderId).first }
+            clock.set(FAULT_SETTLED_AT)
             callbacks = orderIds.associate { (_, orderId) -> orderId to pg.settle(orderId) }
         } finally {
             pg.clearFaults()
@@ -144,6 +152,7 @@ class CheckoutIncidentTest @Autowired constructor(
         val transactionKeysBefore = faultSet.map { pg.transactionOf(it)?.transactionKey }
         val createsBefore = pg.createAttempts().size
 
+        clock.set(RECOVERED_AT)
         val reconciled = faultOwners.map { (userId, orderId) -> post("/api/v1/orders/$orderId/reconcile", userId, emptyMap<String, Any>()) }
         val outboxAfterRecovery = outboxOf(faultSet)
         val repeated = faultOwners.map { (userId, orderId) -> post("/api/v1/orders/$orderId/reconcile", userId, emptyMap<String, Any>()) }
@@ -152,6 +161,7 @@ class CheckoutIncidentTest @Autowired constructor(
         val recoveredPayments = faultSet.flatMap { paymentRepository.findAllByOrderId(it) }
         val recoveredReservations = faultSet.flatMap { stockReservationRepository.findAllByOrderId(it) }
         val outboxAfterRepeat = outboxOf(faultSet)
+        val incidentOutbox = outboxOf(baselineOrderIds + faultSet)
         val stalePendingAfterRecovery = awaitStalePending(expected = 0.0)
         val healthAfterRecovery = managementGet("/actuator/health")
 
@@ -173,6 +183,7 @@ class CheckoutIncidentTest @Autowired constructor(
             { assertThat(users.map { pointService.getBalance(it) }).containsOnly(Money(INITIAL_POINT)) },
             { assertThat(outboxAfterRecovery.map { it.key }).containsExactlyInAnyOrderElementsOf(faultSet.map { it.toString() }) },
             { assertThat(outboxAfterRepeat.map { it.eventId }).isEqualTo(outboxAfterRecovery.map { it.eventId }) },
+            { assertThat(incidentOutbox.sortedBy { it.key.toLong() }.map { objectMapper.readTree(it.payload) }).containsExactlyElementsOf(incidentContract()) },
             {
                 faultOrderIds.forEach {
                     assertThat(output.out).contains("결제 대사. orderId=$it ").contains("outcome=APPLIED")
@@ -280,6 +291,9 @@ class CheckoutIncidentTest @Autowired constructor(
             mapOf("method" to "CARD", "cardType" to CARD_TYPE, "cardNo" to CARD_NO),
         )
 
+    private fun incidentContract() =
+        requireNotNull(javaClass.getResource(INCIDENT_CONTRACT)).readText().lines().filter { it.isNotBlank() }.map { objectMapper.readTree(it) }
+
     private fun outboxOf(orderIds: List<Long>) =
         orderIds.map { it.toString() }.toSet().let { keys -> outboxEventJpaRepository.findAll().filter { it.key in keys }.sortedBy { it.id } }
 
@@ -316,6 +330,13 @@ class CheckoutIncidentTest @Autowired constructor(
         return objectMapper.readTree(response.body)
     }
 
+    @TestConfiguration
+    class FixedClockConfig {
+        @Bean
+        @Primary
+        fun incidentClock(): Clock = clock
+    }
+
     companion object {
         private const val ORDER_COUNT = 10L
         private const val BASELINE_USER_OFFSET = 1_000L
@@ -333,7 +354,13 @@ class CheckoutIncidentTest @Autowired constructor(
         private val POLL_INTERVAL = Duration.ofMillis(200)
         private val STALE_PENDING_LINE = Regex("""(?m)^payment_pending_stale(?:\{[^}]*})? (\S+)$""")
 
+        private const val INCIDENT_CONTRACT = "/contract/order-confirmed-incident-2026-08-17.jsonl"
+        private val BASELINE_SETTLED_AT = Instant.parse("2026-08-18T10:00:00Z")
+        private val FAULT_SETTLED_AT = Instant.parse("2026-08-19T10:00:00Z")
+        private val RECOVERED_AT = Instant.parse("2026-08-20T10:00:00Z")
+
         private val pg = LocalPgFixture(dropHold = Duration.ofMillis(1_500))
+        private val clock = MutableClock(BASELINE_SETTLED_AT)
 
         @JvmStatic
         @DynamicPropertySource
