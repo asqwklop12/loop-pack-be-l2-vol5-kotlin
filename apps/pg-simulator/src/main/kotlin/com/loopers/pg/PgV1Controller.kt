@@ -29,7 +29,7 @@ class PgV1Controller(
 
         val delay = maxOf(
             properties.responseDelay.toMillis(),
-            if (TestCard.of(request.cardNo) == TestCard.SLOW) properties.slowCardDelay.toMillis() else 0,
+            if (TestCard.of(request.cardNo)?.delaysResponse == true) properties.slowCardDelay.toMillis() else 0,
         )
         if (delay > 0) {
             Thread.sleep(delay)

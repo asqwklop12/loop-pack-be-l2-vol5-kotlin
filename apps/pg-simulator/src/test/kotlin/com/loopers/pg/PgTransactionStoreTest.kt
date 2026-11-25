@@ -151,7 +151,8 @@ class PgTransactionStoreTest {
                 { assertThat(accept(1L, cardNo = "1234-5678-9814-0000").transaction.testCard).isEqualTo(TestCard.DECLINED) },
                 { assertThat(accept(2L, cardNo = "1234-5678-9814-1111").transaction.testCard).isEqualTo(TestCard.SLOW) },
                 { assertThat(accept(3L, cardNo = "1234-5678-9814-2222").transaction.testCard).isEqualTo(TestCard.SILENT) },
-                { assertThat(accept(4L, cardNo = "1234-5678-9814-1451").transaction.testCard).isNull() },
+                { assertThat(accept(4L, cardNo = "1234-5678-9814-3333").transaction.testCard).isEqualTo(TestCard.RESPONSE_LOST) },
+                { assertThat(accept(5L, cardNo = "1234-5678-9814-1451").transaction.testCard).isNull() },
             )
         }
     }

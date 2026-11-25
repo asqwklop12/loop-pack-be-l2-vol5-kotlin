@@ -166,6 +166,20 @@ class PgCallbackSenderTest {
         )
     }
 
+    @DisplayName("응답 유실 카드도 확정은 되지만 콜백이 오지 않는다.")
+    @Test
+    fun dropsCallbackForResponseLostCard() {
+        val key = acceptedKey(8L, cardNo = "1234-5678-9814-3333")
+
+        sender().scheduleSettlement(key)
+
+        assertAll(
+            { assertThat(arrived.await(1, TimeUnit.SECONDS)).isFalse() },
+            { assertThat(received).isEmpty() },
+            { assertThat(store.find(key)?.status).isEqualTo(PgStatus.SUCCESS) },
+        )
+    }
+
     @DisplayName("거절 확률이 모두 0이면 승인되고 거절 사유가 없다.")
     @Test
     fun approvesWhenNoDeclineConfigured() {
