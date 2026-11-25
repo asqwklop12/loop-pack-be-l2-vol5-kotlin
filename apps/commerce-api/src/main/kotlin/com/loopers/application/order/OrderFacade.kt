@@ -1,6 +1,7 @@
 package com.loopers.application.order
 
 import com.loopers.application.payment.PaymentProcessor
+import com.loopers.application.payment.PaymentReconciliation
 import com.loopers.domain.order.OrderCommand
 import com.loopers.domain.order.OrderLine
 import com.loopers.domain.order.OrderService
@@ -28,6 +29,7 @@ class OrderFacade(
     private val pointService: PointService,
     private val paymentProcessor: PaymentProcessor,
     private val orderConfirmation: OrderConfirmation,
+    private val paymentReconciliation: PaymentReconciliation,
     private val stockReservationService: StockReservationService,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -106,6 +108,12 @@ class OrderFacade(
             is SocketTimeoutException -> PG_TIMEOUT
             else -> cause.javaClass.simpleName
         }
+
+    fun reconcile(userId: Long, orderId: Long): PaymentReconciliation.Reconciled {
+        orderService.get(userId, orderId)
+
+        return paymentReconciliation.reconcile(orderId)
+    }
 
     fun get(userId: Long, orderId: Long): OrderInfo =
         OrderInfo.from(orderService.get(userId, orderId))
