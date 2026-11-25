@@ -114,7 +114,7 @@ baseline 기대값:
 
 ### 3. 같은 상태를 유지하는 사고 실험
 
-한 테스트 메서드에서 baseline → fault → 증거 보존 → recovery 를 잇는다. 3단계에서는 fault 까지 만들었다(`CheckoutIncidentTest.keepsIncidentState`). recovery 는 5단계에서 같은 메서드에 잇는다.
+한 테스트 메서드에서 baseline → fault → 증거 보존 → recovery 를 잇는다. fault 와 recovery 까지 `CheckoutIncidentTest.recoversIncidentWithoutNewPayment` 한 메서드에서 잇는다(3단계에서 fault, 5단계에서 recovery).
 
 fault 기대값 (별도 장애 집합 10건, 그중 고정한 3건만 응답 유실 + 콜백 보류를 함께):
 
@@ -149,7 +149,7 @@ fault 기대값 (별도 장애 집합 10건, 그중 고정한 3건만 응답 유
 ## 아직 정하지 않은 것
 
 - ~~reconcile 경로를 이번에 만들지~~: 만들었다(2026-11-26). 중단 조건은 [실험 일지](incident-log.md)의 "대사 API" 참고.
-- **주문 확정 → Outbox 연결**: 끊겨 있어서 6단계가 성립하지 않는다. 연결한다면 이벤트를 주문 확정 시점(PG 호출 전)에 낼지, 결제 성공 시점에 낼지 정해야 한다. 지금 구조대로 주문 확정 때 내면 미확인 결제의 구매 활동도 랭킹에 들어간다.
+- ~~주문 확정 → Outbox 연결~~: W7 에 결제 성공 시점으로 정해져 있었고 W8 커밋에서 빠진 것이었다. 같은 시점으로 복원했다(2026-11-26).
 - **사용자 범위**: PG 계약(`PgDto.PaymentRequest`)에 사용자 필드가 없다. "같은 계정" 검증을 무엇으로 할지.
 - ~~미종결 gauge 이름과 범위~~: 범위는 정함(일정 시간 지난 PENDING). 이름은 `payment.pending.stale` 안.
 - ~~settle 반영 로그를 넣을지~~: 넣지 않음. 4단계에서 증거가 부족하면 다시 본다.

@@ -13,6 +13,7 @@ import com.loopers.domain.product.StockReservationRepository
 import com.loopers.domain.product.StockReservationStatus
 import com.loopers.domain.shared.Money
 import com.loopers.infrastructure.brand.BrandJpaRepository
+import com.loopers.infrastructure.outbox.OutboxEventJpaRepository
 import com.loopers.infrastructure.product.ProductJpaRepository
 import com.loopers.utils.DatabaseCleanUp
 import org.assertj.core.api.Assertions.assertThat
@@ -51,6 +52,7 @@ class CheckoutIncidentTest @Autowired constructor(
     private val pointService: PointService,
     private val productJpaRepository: ProductJpaRepository,
     private val brandJpaRepository: BrandJpaRepository,
+    private val outboxEventJpaRepository: OutboxEventJpaRepository,
     private val databaseCleanUp: DatabaseCleanUp,
 ) {
     @LocalServerPort
@@ -78,9 +80,9 @@ class CheckoutIncidentTest @Autowired constructor(
         runBaseline(product)
     }
 
-    @DisplayName("정상 기준선 뒤 별도 주문 10건 중 고정한 3건만 PG 성공 응답을 잃고 콜백도 보류되면, 그 3건만 미확인으로 남고 health 는 UP 이다.")
+    @DisplayName("정상 기준선 뒤 장애 집합 10건 중 고정한 3건만 미확인으로 남고, 같은 3건을 대사하면 새 결제 없이 장애 집합 10건이 모두 성공하고 Outbox 에 한 번씩 기록된다.")
     @Test
-    fun keepsIncidentState(output: CapturedOutput) {
+    fun recoversIncidentWithoutNewPayment(output: CapturedOutput) {
         val product = savedProduct(price = PRICE, stock = INITIAL_STOCK)
         val baselineOrderIds = runBaseline(product)
 
@@ -135,6 +137,49 @@ class CheckoutIncidentTest @Autowired constructor(
             },
             { assertThat(stalePending).isEqualTo(FAULT_POSITIONS.size.toDouble()) },
             { assertThat(health.get("status").asText()).isEqualTo("UP") },
+            { assertThat(pg.faultsCleared()).isTrue() },
+        )
+
+        val faultOwners = orderIds.filter { it.second in faultOrderIds }
+        val transactionKeysBefore = faultSet.map { pg.transactionOf(it)?.transactionKey }
+        val createsBefore = pg.createAttempts().size
+
+        val reconciled = faultOwners.map { (userId, orderId) -> post("/api/v1/orders/$orderId/reconcile", userId, emptyMap<String, Any>()) }
+        val outboxAfterRecovery = outboxOf(faultSet)
+        val repeated = faultOwners.map { (userId, orderId) -> post("/api/v1/orders/$orderId/reconcile", userId, emptyMap<String, Any>()) }
+        val lateCallbacks = faultOrderIds.map { pg.settle(it) }
+
+        val recoveredPayments = faultSet.flatMap { paymentRepository.findAllByOrderId(it) }
+        val recoveredReservations = faultSet.flatMap { stockReservationRepository.findAllByOrderId(it) }
+        val outboxAfterRepeat = outboxOf(faultSet)
+        val stalePendingAfterRecovery = awaitStalePending(expected = 0.0)
+        val healthAfterRecovery = managementGet("/actuator/health")
+
+        assertAll(
+            { assertThat(reconciled.map { it.first }).containsOnly(HttpStatus.OK) },
+            { assertThat(reconciled.map { it.second.at("/data/outcome").asText() }).containsOnly("APPLIED") },
+            { assertThat(repeated.map { it.second.at("/data/outcome").asText() }).containsOnly("NOTHING_PENDING") },
+            { assertThat(lateCallbacks).containsOnly(200) },
+            { assertThat(recoveredPayments).hasSize(ORDER_COUNT.toInt()) },
+            { assertThat(recoveredPayments).allSatisfy { assertThat(it.status).isEqualTo(PaymentStatus.SUCCESS) } },
+            { assertThat(faultSet.map { pg.transactionOf(it)?.transactionKey }).isEqualTo(transactionKeysBefore) },
+            { assertThat(faultSet.map { pg.transactionOf(it)?.status }).containsOnly(LocalPgFixture.SUCCESS) },
+            { assertThat(pg.createAttempts()).hasSize(createsBefore) },
+            { assertThat(faultSet.map { pg.createCountOf(it) }).containsOnly(1) },
+            { assertThat(pg.duplicateCreates()).isEmpty() },
+            { assertThat(recoveredReservations).hasSize(ORDER_COUNT.toInt()) },
+            { assertThat(recoveredReservations).allSatisfy { assertThat(it.status).isEqualTo(StockReservationStatus.COMMITTED) } },
+            { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(INITIAL_STOCK - 2 * ORDER_COUNT.toInt())) },
+            { assertThat(users.map { pointService.getBalance(it) }).containsOnly(Money(INITIAL_POINT)) },
+            { assertThat(outboxAfterRecovery.map { it.key }).containsExactlyInAnyOrderElementsOf(faultSet.map { it.toString() }) },
+            { assertThat(outboxAfterRepeat.map { it.eventId }).isEqualTo(outboxAfterRecovery.map { it.eventId }) },
+            {
+                faultOrderIds.forEach {
+                    assertThat(output.out).contains("결제 대사. orderId=$it ").contains("outcome=APPLIED")
+                }
+            },
+            { assertThat(stalePendingAfterRecovery).isEqualTo(0.0) },
+            { assertThat(healthAfterRecovery.get("status").asText()).isEqualTo("UP") },
             { assertThat(pg.faultsCleared()).isTrue() },
         )
     }
@@ -234,6 +279,9 @@ class CheckoutIncidentTest @Autowired constructor(
             userId,
             mapOf("method" to "CARD", "cardType" to CARD_TYPE, "cardNo" to CARD_NO),
         )
+
+    private fun outboxOf(orderIds: List<Long>) =
+        orderIds.map { it.toString() }.toSet().let { keys -> outboxEventJpaRepository.findAll().filter { it.key in keys }.sortedBy { it.id } }
 
     private fun stalePending(): Double? {
         val body = testRestTemplate.getForEntity("http://localhost:$managementPort/actuator/prometheus", String::class.java).body

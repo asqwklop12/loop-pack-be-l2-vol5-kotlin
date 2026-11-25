@@ -10,6 +10,8 @@
 | 2026-11-23 | 2 | PG 경계 로그 3줄, gauge `payment.pending.stale`, `transactionKey` 전달, 관측 테스트 `observesLostResponse` 추가 | incident 7개 통과. commerce-api 전체 479개 중 8개 실패 — 모두 Outbox·이벤트 테스트이고 변경 전 커밋 d8c12ca 에서도 같은 8개가 실패함. ktlint·ArchUnit 통과 |
 | 2026-11-25 | 3 | `keepsIncidentState` 추가(baseline → fault 를 한 테스트에서). baseline 단언은 `runBaseline` 으로 옮겨 두 테스트가 같이 씀. 프로덕션 코드 변경 없음 | incident 8개 통과. 응답 유실 주입을 빼면 실패하는 것 확인. ktlint 통과 |
 | 2026-11-26 | 5 준비 | 본인 주문 대사 API `POST /api/v1/orders/{orderId}/reconcile` 추가. 로컬 14번 대사 | 대사 테스트 10개 통과. commerce-api 전체 490개 중 8개 실패(기존 Outbox 8개 동일). 14번 SUCCESS, 새 결제 없음 |
+| 2026-11-26 | 6 준비 | 주문 확정 → Outbox 연결 복원. W7(`71f9e0e`)에는 `PaymentSettlement.succeed` 에서 Outbox 에 기록했는데 W8(`f9d2789`)에서 빠졌다. 결제 SUCCESS 반영 시점에 다시 기록한다. `StockReservationService.commit` 이 확정한 예약을 돌려주게 바꿨다 | commerce-api 전체 490개 모두 통과(이전에 실패하던 Outbox·이벤트 8개 포함). 대사 API 도 같은 반영 경로라 복구한 주문도 Outbox 에 기록된다 |
+| 2026-11-26 | 5 | 사고 테스트에 복구 단계를 이었다. `keepsIncidentState` → `recoversIncidentWithoutNewPayment`. 한 테스트 안에서 baseline → fault → recovery | incident 8개 통과. Outbox 기록을 빼면 Outbox 단언이 실패하는 것 확인. ktlint 통과 |
 
 ## 1번에서 알게 된 것
 
@@ -140,3 +142,25 @@
 - 대사 전 상태: `~/w10-observability/evidence/order1-2-before-reconcile-20261126-005122.txt`. pg-simulator 를 11-25 에 재시작하면서 메모리 거래가 지워져 PG 조회는 둘 다 404.
 - 대사 결과: 1번(user 3001)·2번(user 3002) 모두 `TRANSACTION_NOT_FOUND`, Payment `PENDING`·예약 `RESERVED` 그대로. 정한 중단 조건대로 임의로 성공·실패를 정하지 않았다.
 - 이 두 건은 대사로 끝낼 수 없다. PG 쪽 기록이 사라졌기 때문이다. 2단계 로컬 테스트 데이터라 장애 집합 실험과는 관계없다.
+
+## 5번 사고 테스트 복구 단계 (2026-11-26)
+
+`CheckoutIncidentTest.recoversIncidentWithoutNewPayment` 가 fault 단언 뒤 같은 DB·같은 `LocalPgFixture` 거래로 이어서 복구한다.
+
+- 장애 3건을 각 주문 주인으로 대사 API(실제 controller·adapter·DB)로 부른다 → 모두 `APPLIED`.
+- 같은 3건을 다시 대사 → `NOTHING_PENDING`. 보류했던 콜백을 뒤늦게 보내도(`pg.settle`) 200 이고 바뀌는 것 없음.
+- 장애 집합 10건을 새로 조회해 확인한 것:
+
+  | 항목 | 결과 |
+  | ---- | ---- |
+  | 결제 SUCCESS / PENDING | 10 / 0 |
+  | PG 거래 | 복구 전과 같은 거래 키 10개, 모두 SUCCESS |
+  | 복구 중 결제 생성(create) 추가 | 0 (누적 20 그대로, 주문마다 1, 중복 0) |
+  | 재고 예약 | COMMITTED 10, 재고 30 → 10 그대로 |
+  | 포인트 | 그대로 |
+  | Outbox | 장애 집합 주문마다 1건(10건). 반복 대사·늦은 콜백 뒤에도 같은 10건 |
+  | 로그 | 장애 3건 모두 `결제 대사. orderId=… outcome=APPLIED` |
+  | 미확인 결제 지표 | 0 |
+  | health | UP |
+- 쿠폰은 이 테스트에서 만들지 않아서 "쿠폰 불변"은 확인하지 않았다.
+- Outbox 이후(relay → Kafka → 구매 활동 → 스냅샷 → 랭킹)는 6단계에서 잇는다.
