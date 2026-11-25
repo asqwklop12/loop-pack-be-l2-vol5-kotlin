@@ -12,6 +12,7 @@
 | 2026-11-26 | 5 준비 | 본인 주문 대사 API `POST /api/v1/orders/{orderId}/reconcile` 추가. 로컬 14번 대사 | 대사 테스트 10개 통과. commerce-api 전체 490개 중 8개 실패(기존 Outbox 8개 동일). 14번 SUCCESS, 새 결제 없음 |
 | 2026-11-26 | 6 준비 | 주문 확정 → Outbox 연결 복원. W7(`71f9e0e`)에는 `PaymentSettlement.succeed` 에서 Outbox 에 기록했는데 W8(`f9d2789`)에서 빠졌다. 결제 SUCCESS 반영 시점에 다시 기록한다. `StockReservationService.commit` 이 확정한 예약을 돌려주게 바꿨다 | commerce-api 전체 490개 모두 통과(이전에 실패하던 Outbox·이벤트 8개 포함). 대사 API 도 같은 반영 경로라 복구한 주문도 Outbox 에 기록된다 |
 | 2026-11-26 | 5 | 사고 테스트에 복구 단계를 이었다. `keepsIncidentState` → `recoversIncidentWithoutNewPayment`. 한 테스트 안에서 baseline → fault → recovery | incident 8개 통과. Outbox 기록을 빼면 Outbox 단언이 실패하는 것 확인. ktlint 통과 |
+| 2026-11-26 | 6 | 사고용 계약 `order-confirmed-incident-2026-08-17.jsonl`(20건)로 W9 연결 5구간을 한 번 더 이었다. 결제 성공 시각을 정하는 `Clock` 을 `PaymentSettlement` 에 주입 | api 491개 모두 통과, relay·streamer·batch 연결 테스트 통과, ktlint 통과. 복구 시각을 고정하지 않으면 1구간이 실패하는 것 확인 |
 
 ## 1번에서 알게 된 것
 
@@ -180,3 +181,32 @@
   | health | UP |
 - 쿠폰은 이 테스트에서 만들지 않아서 "쿠폰 불변"은 확인하지 않았다.
 - Outbox 이후(relay → Kafka → 구매 활동 → 스냅샷 → 랭킹)는 6단계에서 잇는다.
+
+## 6번 후속 결과 연결 (2026-11-26)
+
+W9 처럼 모듈마다 같은 계약 파일을 두고 구간을 잇는다. 사고 테스트가 실제로 만든 Outbox 20건(정상 10, 복구한 장애 10)을 계약 파일로 고정했다.
+
+| 구간 | 모듈 | 테스트 | 확인한 것 |
+| ---- | ---- | ---- | ---- |
+| 1 | commerce-api | `CheckoutIncidentTest.recoversIncidentWithoutNewPayment` | 정상·장애 20건의 Outbox payload 가 사고용 계약과 글자 그대로 같다 |
+| 2 | commerce-relay | `OrderConfirmedRelayConnectionTest.relaysIncidentPayloadAsIs` | 20건이 Kafka 에 키·payload 그대로 도착 |
+| 3 | commerce-streamer | `OrderConfirmedStreamerConnectionTest.recordsIncidentActivitiesOnce` | 구매 활동이 주문마다 한 번씩 20건, 다시 받아도 20건 |
+| 4 | commerce-batch | `IncidentWeeklyRankingConnectionTest.ranksIncidentActivities` | 새 스냅샷에 주문 20건이 모두 입력되고 상품 점수 20, 1위, 포인터 PUBLISHED |
+| 5 | commerce-api | `WeeklyRankingApiConnectionTest.returnsIncidentRankingWrittenByBatch` | 랭킹 API 가 점수 20, 1위를 돌려준다 |
+
+- 시각: 결제 성공 시각(`confirmedAt`)이 실행마다 달라지지 않도록 `PaymentSettlement` 가 `Clock` 빈으로 시각을 정하게 바꿨다(사용자 결정). 운영은 `Clock.systemDefaultZone()`. 사고 테스트는 고정 시계로 정상 반영 2026-08-18, 장애 중 정상 반영 2026-08-19, 대사 복구 2026-08-20 (모두 10:00Z, 같은 주 2026-08-17).
+- 복구한 3건(주문 12·15·18)의 `confirmedAt` 은 대사 시각(2026-08-20)이다. 결제 성공을 처음 저장한 시각이고 덮어쓰지 않는다. 같은 주라 점수 20 에 들어간다. 사고와 복구 사이에 주가 바뀌면 다음 주로 집계된다.
+- 2구간 relay 테스트는 로컬 Kafka(19092–19094)를 쓴다.
+- 구간 사이는 계약 파일로 이어지고, 한 실행에서 실제 Kafka 를 거쳐 끝까지 흐르는 테스트는 아니다. W9 와 같은 방식이고 과제의 "production application 끼리의 의존성을 억지로 추가하지 않습니다"에 맞춘 선택이다.
+
+## 로컬 후속 결과 확인 — 구매 활동까지 (2026-11-26 01:40)
+
+commerce-api(Outbox 연결 복원 코드), commerce-relay(10초 주기), commerce-streamer 를 로컬에서 띄우고 새 장애 집합으로 다시 돌렸다. 다른 세션 앱과 MySQL 커넥션을 나눠 쓰느라 relay·streamer 는 커넥션 풀을 줄여 띄웠다.
+
+- 주문 23–32(user 5001–5010), 2·5·8번째(24·27·30)만 `3333` 카드.
+- 장애 상태(대사 전): 결제 SUCCESS 7 / PENDING 3(24·27·30), Outbox SENT 7, 구매 활동 7. PG 조회는 세 건 모두 SUCCESS. 증거: `~/w10-observability/evidence/orders23-32-fault-20261126-014040.txt`.
+- 24·27·30 을 각 주인으로 대사 → 모두 `APPLIED`.
+- 대사 뒤: 결제 SUCCESS 10, Outbox SENT 10, 구매 활동 10(주문마다 한 번, 상품 1, 수량 1), 처리 기록 10. 대사한 세 건의 `confirmedAt` 은 대사 시각(01:40:52 KST)이다.
+- 같은 3건을 다시 대사 → `NOTHING_PENDING`. Outbox·구매 활동 모두 10 그대로.
+- 24·27·30 의 `PG 결제 요청` 로그는 사고 때의 3줄 그대로라 새 결제 생성은 없다.
+- 주간 배치·랭킹은 로컬에서 돌리지 않았다. 로컬 주문은 이번 주라 지난주를 집계하는 배치 대상이 아니다. 랭킹 점수는 6번 연결 테스트(4·5구간)로 확인했다.
