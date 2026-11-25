@@ -74,32 +74,68 @@ class CheckoutIncidentTest @Autowired constructor(
     @Test
     fun baseline() {
         val product = savedProduct(price = PRICE, stock = INITIAL_STOCK)
-        val users = (1L..ORDER_COUNT).map { BASELINE_USER_OFFSET + it }
+
+        runBaseline(product)
+    }
+
+    @DisplayName("정상 기준선 뒤 별도 주문 10건 중 고정한 3건만 PG 성공 응답을 잃고 콜백도 보류되면, 그 3건만 미확인으로 남고 health 는 UP 이다.")
+    @Test
+    fun keepsIncidentState(output: CapturedOutput) {
+        val product = savedProduct(price = PRICE, stock = INITIAL_STOCK)
+        val baselineOrderIds = runBaseline(product)
+
+        val users = (1L..ORDER_COUNT).map { FAULT_USER_OFFSET + it }
         users.forEach { pointService.charge(it, Money(INITIAL_POINT)) }
+        val orderIds = users.map { userId -> userId to placeOrder(userId, product.id) }
+        val faultOrderIds = FAULT_POSITIONS.map { orderIds[it].second }
+        val normalOrderIds = orderIds.map { it.second } - faultOrderIds.toSet()
 
-        assertThat(pg.faultsCleared()).isTrue()
-        val orderIds = users.map { userId -> placeAndConfirm(userId, product.id) }
-        orderIds.forEach { assertThat(pg.settle(it)).isEqualTo(200) }
+        val confirmed: Map<Long, HttpStatus>
+        val callbacks: Map<Long, Int?>
+        try {
+            pg.dropResponseFor(faultOrderIds)
+            pg.holdCallbackFor(faultOrderIds)
+            confirmed = orderIds.associate { (userId, orderId) -> orderId to confirm(userId, orderId).first }
+            callbacks = orderIds.associate { (_, orderId) -> orderId to pg.settle(orderId) }
+        } finally {
+            pg.clearFaults()
+        }
 
-        val payments = orderIds.flatMap { paymentRepository.findAllByOrderId(it) }
-        val reservations = orderIds.flatMap { stockReservationRepository.findAllByOrderId(it) }
+        val faultSet = orderIds.map { it.second }
+        val payments = faultSet.flatMap { paymentRepository.findAllByOrderId(it) }
+        val pending = payments.filter { it.status == PaymentStatus.PENDING }
+        val reservations = faultSet.flatMap { stockReservationRepository.findAllByOrderId(it) }
+        val stalePending = awaitStalePending(expected = FAULT_POSITIONS.size.toDouble())
         val health = managementGet("/actuator/health")
 
         assertAll(
-            { assertThat(orderIds).doesNotHaveDuplicates().hasSize(ORDER_COUNT.toInt()) },
+            { assertThat(faultSet).doesNotHaveDuplicates().hasSize(ORDER_COUNT.toInt()).doesNotContainAnyElementsOf(baselineOrderIds) },
+            { assertThat(faultOrderIds.map { confirmed[it] }).containsOnly(HttpStatus.INTERNAL_SERVER_ERROR) },
+            { assertThat(normalOrderIds.map { confirmed[it] }).containsOnly(HttpStatus.OK) },
+            { assertThat(faultOrderIds.map { callbacks[it] }).containsOnlyNulls() },
+            { assertThat(normalOrderIds.map { callbacks[it] }).containsOnly(200) },
             { assertThat(payments).hasSize(ORDER_COUNT.toInt()) },
-            { assertThat(payments).allSatisfy { assertThat(it.status).isEqualTo(PaymentStatus.SUCCESS) } },
-            { assertThat(payments).allSatisfy { assertThat(it.amount).isEqualTo(Money(PRICE)) } },
-            { assertThat(orderIds.map { pg.transactionOf(it)?.status }).containsOnly(LocalPgFixture.SUCCESS) },
-            { assertThat(orderIds.map { pg.transactionOf(it)?.amount }).containsOnly(PRICE) },
-            { assertThat(orderIds.map { pg.createCountOf(it) }).containsOnly(1) },
-            { assertThat(pg.createAttempts()).hasSize(ORDER_COUNT.toInt()) },
+            { assertThat(payments.count { it.status == PaymentStatus.SUCCESS }).isEqualTo(ORDER_COUNT.toInt() - FAULT_POSITIONS.size) },
+            { assertThat(pending.map { it.orderId }).containsExactlyInAnyOrderElementsOf(faultOrderIds) },
+            { assertThat(faultSet.map { pg.transactionOf(it)?.status }).containsOnly(LocalPgFixture.SUCCESS) },
+            { assertThat(faultSet.map { pg.transactionOf(it)?.amount }).containsOnly(PRICE) },
+            { assertThat(pg.transactions()).hasSize(2 * ORDER_COUNT.toInt()) },
+            { assertThat(pg.createAttempts()).hasSize(2 * ORDER_COUNT.toInt()) },
             { assertThat(pg.duplicateCreates()).isEmpty() },
-            { assertThat(reservations).hasSize(ORDER_COUNT.toInt()) },
-            { assertThat(reservations).allSatisfy { assertThat(it.status).isEqualTo(StockReservationStatus.COMMITTED) } },
-            { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(INITIAL_STOCK - ORDER_COUNT.toInt())) },
+            { assertThat(reservations.filter { it.orderId in faultOrderIds }).hasSize(FAULT_POSITIONS.size).allSatisfy { assertThat(it.status).isEqualTo(StockReservationStatus.RESERVED) } },
+            { assertThat(reservations.filter { it.orderId in normalOrderIds }).allSatisfy { assertThat(it.status).isEqualTo(StockReservationStatus.COMMITTED) } },
+            { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(INITIAL_STOCK - 2 * ORDER_COUNT.toInt())) },
             { assertThat(users.map { pointService.getBalance(it) }).containsOnly(Money(INITIAL_POINT)) },
+            {
+                pending.forEach {
+                    assertThat(output.out).contains(
+                        "PG 결제 응답을 받지 못했다. orderId=${it.orderId} paymentKey=${it.paymentKey} failure=${OrderFacade.PG_TIMEOUT}",
+                    )
+                }
+            },
+            { assertThat(stalePending).isEqualTo(FAULT_POSITIONS.size.toDouble()) },
             { assertThat(health.get("status").asText()).isEqualTo("UP") },
+            { assertThat(pg.faultsCleared()).isTrue() },
         )
     }
 
@@ -132,6 +168,38 @@ class CheckoutIncidentTest @Autowired constructor(
             { assertThat(afterThreshold).isEqualTo(1.0) },
             { assertThat(health.get("status").asText()).isEqualTo("UP") },
         )
+    }
+
+    private fun runBaseline(product: Product): List<Long> {
+        val users = (1L..ORDER_COUNT).map { BASELINE_USER_OFFSET + it }
+        users.forEach { pointService.charge(it, Money(INITIAL_POINT)) }
+
+        assertThat(pg.faultsCleared()).isTrue()
+        val orderIds = users.map { userId -> placeAndConfirm(userId, product.id) }
+        orderIds.forEach { assertThat(pg.settle(it)).isEqualTo(200) }
+
+        val payments = orderIds.flatMap { paymentRepository.findAllByOrderId(it) }
+        val reservations = orderIds.flatMap { stockReservationRepository.findAllByOrderId(it) }
+        val health = managementGet("/actuator/health")
+
+        assertAll(
+            { assertThat(orderIds).doesNotHaveDuplicates().hasSize(ORDER_COUNT.toInt()) },
+            { assertThat(payments).hasSize(ORDER_COUNT.toInt()) },
+            { assertThat(payments).allSatisfy { assertThat(it.status).isEqualTo(PaymentStatus.SUCCESS) } },
+            { assertThat(payments).allSatisfy { assertThat(it.amount).isEqualTo(Money(PRICE)) } },
+            { assertThat(orderIds.map { pg.transactionOf(it)?.status }).containsOnly(LocalPgFixture.SUCCESS) },
+            { assertThat(orderIds.map { pg.transactionOf(it)?.amount }).containsOnly(PRICE) },
+            { assertThat(orderIds.map { pg.createCountOf(it) }).containsOnly(1) },
+            { assertThat(pg.createAttempts()).hasSize(ORDER_COUNT.toInt()) },
+            { assertThat(pg.duplicateCreates()).isEmpty() },
+            { assertThat(reservations).hasSize(ORDER_COUNT.toInt()) },
+            { assertThat(reservations).allSatisfy { assertThat(it.status).isEqualTo(StockReservationStatus.COMMITTED) } },
+            { assertThat(productJpaRepository.findById(product.id).get().stock).isEqualTo(Stock(INITIAL_STOCK - ORDER_COUNT.toInt())) },
+            { assertThat(users.map { pointService.getBalance(it) }).containsOnly(Money(INITIAL_POINT)) },
+            { assertThat(health.get("status").asText()).isEqualTo("UP") },
+        )
+
+        return orderIds
     }
 
     private fun savedProduct(price: Long, stock: Int): Product {
@@ -209,6 +277,8 @@ class CheckoutIncidentTest @Autowired constructor(
         private const val CARD_TYPE = "SAMSUNG"
         private const val CARD_NO = "1234-5678-9814-1451"
         private const val OBSERVATION_USER_OFFSET = 2_000L
+        private const val FAULT_USER_OFFSET = 3_000L
+        private val FAULT_POSITIONS = listOf(1, 4, 7)
 
         private val STALE_PENDING_AFTER = Duration.ofSeconds(2)
         private val STALE_PENDING_WAIT = Duration.ofSeconds(5)
